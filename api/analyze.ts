@@ -30,19 +30,23 @@ export default async function handler(req: any, res: any) {
     const { base64Data, isPro } = req.body;
 
     const genAI = new GoogleGenerativeAI(API_KEY);
-    // Using gemini-1.5-flash for the best balance of speed and image reasoning
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash-lite",
       generationConfig: { responseMimeType: "application/json" },
     });
 
     const base64Content = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
     const imagePart = { inlineData: { data: base64Content, mimeType: "image/jpeg" } };
 
+    // We modify the instructions based on the user's subscription status
+    const dynamicInstructions = isPro
+      ? "Calculate the duration for ALL 10 activities."
+      : "ONLY calculate the duration for Activity 1 and 2. For activities 3-10, use the exact placeholder values provided in the JSON structure below.";
+
     const prompt = `
     1. Identify the meal or food items in the image.
     2. Provide a best estimate of the total calories as a plain integer.
-    3. Calculate the specific duration needed for each of the 10 activities below to burn those exact calories.
+    3. ${dynamicInstructions}
 
     4. STATUS LABELS:
        - Use 'HEALTHY' if the food is nutritious, whole, or low calorie.
