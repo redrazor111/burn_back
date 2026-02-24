@@ -54,6 +54,10 @@ function CameraScreen({ onImageCaptured, onRecommendationsFound,
   const initialState: AnalysisState = { text: "", status: "gray" };
   const lastImageRef = useRef<string | null>(null);
 
+  // New Data States
+  const [identifiedProduct, setIdentifiedProduct] = useState<string | null>(null);
+  const [calories, setCalories] = useState<string | number | null>(null);
+
   const [a1, setA1] = useState<AnalysisState>(initialState);
   const [a2, setA2] = useState<AnalysisState>(initialState);
   const [a3, setA3] = useState<AnalysisState>(initialState);
@@ -100,6 +104,8 @@ function CameraScreen({ onImageCaptured, onRecommendationsFound,
 
   const handleReset = () => {
     lastImageRef.current = null;
+    setIdentifiedProduct(null);
+    setCalories(null);
     [setA1, setA2, setA3, setA4, setA5, setA6, setA7, setA8, setA9, setA10].forEach(s => s(initialState));
   };
 
@@ -131,6 +137,11 @@ function CameraScreen({ onImageCaptured, onRecommendationsFound,
       const rawResponse = await analyzeImageWithGemini(base64Data, isPro);
       const data = JSON.parse(rawResponse);
       await incrementQuota();
+
+      // Extract identified product and calories from JSON
+      if (data.identifiedProduct) setIdentifiedProduct(data.identifiedProduct);
+      if (data.calories) setCalories(data.calories);
+
       if (data.recommendations) onRecommendationsFound(data.recommendations);
       const updateState = (categoryData: any, setter: any) => {
         setter({
@@ -167,8 +178,8 @@ function CameraScreen({ onImageCaptured, onRecommendationsFound,
   return (
     <View style={styles.cameraTabContainer}>
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-        <Text style={styles.title}>Activity Scan</Text>
-        <Text style={styles.subtitle}>Analyze your exercise and form</Text>
+        <Text style={styles.title}>Burn Back</Text>
+        <Text style={styles.subtitle}>Scan your meal to see your burn options</Text>
       </View>
       <View style={styles.cameraViewHalf}>
         {hasPermission ? (
@@ -189,8 +200,23 @@ function CameraScreen({ onImageCaptured, onRecommendationsFound,
         )}
       </View>
       <View style={styles.resultsHalf}>
+
+        {/* Identified Product & Calorie Display */}
+        {(identifiedProduct || calories) && (
+          <View style={styles.productInfoCard}>
+            <View>
+              <Text style={styles.productLabel}>Identified</Text>
+              <Text style={styles.productName}>{identifiedProduct || "Unknown Item"}</Text>
+            </View>
+            <View style={styles.calorieBadge}>
+              <Text style={styles.calorieValue}>{calories}</Text>
+              <Text style={styles.calorieLabel}>kcal</Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.headerRow}>
-          <Text style={styles.resultsHeader}>Metrics</Text>
+          <Text style={styles.resultsHeader}>Burn Options</Text>
           <TouchableOpacity onPress={handleReset} style={styles.actionButton}>
             <Ionicons name="refresh" size={16} color="#2E7D32" />
             <Text style={styles.actionText}>Reset</Text>
@@ -276,7 +302,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, color: '#757575', marginTop: 4 },
   cameraViewHalf: { height: '35%', backgroundColor: '#000', borderBottomLeftRadius: 30, borderBottomRightRadius: 30, overflow: 'hidden' },
   resultsHalf: { flex: 1, paddingHorizontal: 20 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, marginBottom: 10 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 15, marginBottom: 10 },
   resultsHeader: { fontSize: 20, fontWeight: '800', color: '#1A1A1A' },
   actionButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F5E9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   actionText: { fontSize: 12, fontWeight: '700', color: '#2E7D32', marginLeft: 4 },
@@ -289,5 +315,28 @@ const styles = StyleSheet.create({
   bottomRight: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
   scanLine: { height: 3, backgroundColor: '#4CAF50', width: '100%' },
   placeholderCenter: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scrollPadding: { paddingHorizontal: 20, paddingBottom: 30 },
+  scrollPadding: { paddingBottom: 30 },
+
+  // New Styles for Product Info Card
+  productInfoCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 20,
+    marginTop: -30, // Floats the card over the camera view
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  productLabel: { fontSize: 10, color: '#9E9E9E', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  productName: { fontSize: 20, fontWeight: '800', color: '#1B4D20', marginTop: 2 },
+  calorieBadge: { backgroundColor: '#1B4D20', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12, alignItems: 'center' },
+  calorieValue: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
+  calorieLabel: { color: '#FFFFFF', fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
 });
