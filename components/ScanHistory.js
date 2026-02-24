@@ -82,10 +82,13 @@ export default function ScanHistory({ onTriggerRerun }) {
     try {
       const parsed = typeof data === 'string' ? JSON.parse(data) : data;
       const status = parsed?.status?.toUpperCase();
-      if (status === "UNSAFE") return "#FF5252";
-      if (status === "CAUTION") return "#FFB300";
-      if (status === "SAFE") return "#2E7D32";
-    } catch { return "#757575"; }
+
+      if (status === "UNHEALTHY") return "#FF5252"; // Red
+      if (status === "MODERATE") return "#FFB300";  // Orange/Yellow
+      if (status === "HEALTHY") return "#2E7D32";   // Green
+    } catch {
+      return "#757575";
+    }
     return "#757575";
   };
 

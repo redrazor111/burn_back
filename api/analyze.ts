@@ -2,15 +2,17 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const config = {
-  maxDuration: 30,
+  maxDuration: 30, // Gemini can take a few seconds to process images
 };
 
 export default async function handler(req: any, res: any) {
+  // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
 
+  // Handle pre-flight OPTIONS request
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -28,7 +30,7 @@ export default async function handler(req: any, res: any) {
     const { base64Data, isPro } = req.body;
 
     const genAI = new GoogleGenerativeAI(API_KEY);
-    // Note: Ensure you use a valid model name like "gemini-1.5-flash"
+    // Using gemini-1.5-flash for the best balance of speed and image reasoning
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-flash",
       generationConfig: { responseMimeType: "application/json" },
@@ -38,32 +40,36 @@ export default async function handler(req: any, res: any) {
     const imagePart = { inlineData: { data: base64Content, mimeType: "image/jpeg" } };
 
     const prompt = `
-    1. Identify the meal/food items in the image and provide a best guess for total calories.
-    2. Calculate exactly how much of the following 10 activities are needed to burn that specific calorie count.
-    3. The 10 activities must be:
+    1. Identify the meal or food items in the image.
+    2. Provide a best estimate of the total calories as a plain integer.
+    3. Calculate the specific duration needed for each of the 10 activities below to burn those exact calories.
+
+    4. STATUS LABELS:
+       - Use 'HEALTHY' if the food is nutritious, whole, or low calorie.
+       - Use 'MODERATE' if the food has average processing or balanced calories.
+       - Use 'UNHEALTHY' if the food is junk, highly processed, or very high calorie.
+
+    5. ACTIVITIES MAPPING:
        - Activity 1: Running (moderate pace)
-       - Activity 2: Walking (brisk)
+       - Activity 2: Walking (brisk pace)
        - Activity 3: Weight Training (high intensity)
-       - Activity 4: Cycling
-       - Activity 5: Swimming
+       - Activity 4: Cycling (steady pace)
+       - Activity 5: Swimming (laps)
        - Activity 6: HIIT/Exercise Class
        - Activity 7: Yoga/Pilates
        - Activity 8: Rowing
        - Activity 9: Jump Rope
-       - Activity 10: Hiking
+       - Activity 10: Hiking (uphill)
 
-    4. For each activity:
-       - Status should be 'SAFE' if the food is healthy, 'CAUTION' if moderately processed, or 'UNSAFE' if it's very high calorie/junk.
-       - Summary should state the duration (e.g., "45 minutes") and a brief tip on form or benefit.
-
-    5. RECOMMENDATIONS:
-       - Provide a list of 10 Amazon products related to the meal or fitness gear (e.g., "Food scale", "Running shoes", "Healthy cookbook").
+    6. SUMMARY CONTENT:
+       - Start with the duration (e.g., "42 minutes") followed by a short helpful tip.
 
     Return ONLY this JSON structure:
     {
-      "identifiedProduct": "Meal Name (Total Estimated Calories)",
-      "activity1": {"status": "string", "summary": "string"},
-      "activity2": {"status": "string", "summary": "string"},
+      "identifiedProduct": "string (Meal Name)",
+      "calories": 0,
+      "activity1": {"status": "HEALTHY | MODERATE | UNHEALTHY", "summary": "string"},
+      "activity2": {"status": "HEALTHY | MODERATE | UNHEALTHY", "summary": "string"},
       "activity3": ${isPro ? `{"status": "string", "summary": "string"}` : `{"status": "WAITING", "summary": "Premium Feature"}`},
       "activity4": ${isPro ? `{"status": "string", "summary": "string"}` : `{"status": "WAITING", "summary": "Premium Feature"}`},
       "activity5": ${isPro ? `{"status": "string", "summary": "string"}` : `{"status": "WAITING", "summary": "Premium Feature"}`},
@@ -78,9 +84,7 @@ export default async function handler(req: any, res: any) {
 
     const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
-    const text = response.text();
-
-    return res.status(200).json(JSON.parse(text));
+    return res.status(200).json(JSON.parse(response.text()));
 
   } catch (error: any) {
     console.error("Vercel Backend Error:", error);

@@ -1,4 +1,4 @@
-const VERCEL_API_URL = "https://is-it-good-pearl.vercel.app/api/analyze";
+const VERCEL_API_URL = "https://burn-back.vercel.app/api/analyze";
 
 export const analyzeImageWithGemini = async (base64Data: string, isPro: boolean) => {
   try {
@@ -9,21 +9,31 @@ export const analyzeImageWithGemini = async (base64Data: string, isPro: boolean)
     });
 
     if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+
     const data = await response.json();
+    // We return the stringified data because your CameraScreen component
+    // calls JSON.parse() on the result of this function.
     return JSON.stringify(data);
+
   } catch (error: any) {
     console.error("Frontend Service Error:", error);
 
-    const errorHasOccurred = "An Error has occurred."
-    // Return a fallback object so the app doesn't crash
+    const errorMsg = "Service temporarily unavailable.";
+
+    // Updated fallback to match your 10 activity structure
     return JSON.stringify({
-      food: { status: "UNSAFE", summary: errorHasOccurred },
-      skin: { status: "UNSAFE", summary: errorHasOccurred },
-      makeup: { status: "UNSAFE", summary: errorHasOccurred },
-      veg: { status: "UNSAFE", summary: errorHasOccurred },
-      vegan: { status: "UNSAFE", summary: errorHasOccurred },
-      halal: { status: "UNSAFE", summary: errorHasOccurred },
-      alcohol: { status: "UNSAFE", summary: errorHasOccurred },
+      identifiedProduct: "Analysis Failed",
+      activity1: { status: "UNSAFE", summary: errorMsg },
+      activity2: { status: "UNSAFE", summary: errorMsg },
+      activity3: { status: "UNSAFE", summary: errorMsg },
+      activity4: { status: "UNSAFE", summary: errorMsg },
+      activity5: { status: "UNSAFE", summary: errorMsg },
+      activity6: { status: "UNSAFE", summary: errorMsg },
+      activity7: { status: "UNSAFE", summary: errorMsg },
+      activity8: { status: "UNSAFE", summary: errorMsg },
+      activity9: { status: "UNSAFE", summary: errorMsg },
+      activity10: { status: "UNSAFE", summary: errorMsg },
+      recommendations: []
     });
   }
 };
