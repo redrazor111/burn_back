@@ -57,6 +57,7 @@ function CameraScreen({ onImageCaptured, onRecommendationsFound,
   // New Data States
   const [identifiedProduct, setIdentifiedProduct] = useState<string | null>(null);
   const [calories, setCalories] = useState<string | number | null>(null);
+  const [hasScannedOnce, setHasScannedOnce] = useState(false); // New flag to keep card visible
 
   const [a1, setA1] = useState<AnalysisState>(initialState);
   const [a2, setA2] = useState<AnalysisState>(initialState);
@@ -106,6 +107,7 @@ function CameraScreen({ onImageCaptured, onRecommendationsFound,
     lastImageRef.current = null;
     setIdentifiedProduct(null);
     setCalories(null);
+    setHasScannedOnce(false);
     [setA1, setA2, setA3, setA4, setA5, setA6, setA7, setA8, setA9, setA10].forEach(s => s(initialState));
   };
 
@@ -128,21 +130,27 @@ function CameraScreen({ onImageCaptured, onRecommendationsFound,
         return;
       }
     }
-    handleReset();
+
+    // Partially reset activities but keep the 'hasScannedOnce' flag
+    // to keep the Product Info Card UI structure present while loading
     setIsLoading(true);
+    setHasScannedOnce(true);
+
     lastImageRef.current = base64Data;
     const cleanBase64 = base64Data.replace('data:image/jpeg;base64,', '');
     onImageCaptured(cleanBase64);
+
     try {
       const rawResponse = await analyzeImageWithGemini(base64Data, isPro);
       const data = JSON.parse(rawResponse);
       await incrementQuota();
 
-      // Extract identified product and calories from JSON
-      if (data.identifiedProduct) setIdentifiedProduct(data.identifiedProduct);
-      if (data.calories) setCalories(data.calories);
+      // Update data states
+      setIdentifiedProduct(data.identifiedProduct || "Unknown Item");
+      setCalories(data.calories || "0");
 
       if (data.recommendations) onRecommendationsFound(data.recommendations);
+
       const updateState = (categoryData: any, setter: any) => {
         setter({
           text: JSON.stringify(categoryData),
@@ -159,13 +167,18 @@ function CameraScreen({ onImageCaptured, onRecommendationsFound,
       updateState(data.activity8, setA8);
       updateState(data.activity9, setA9);
       updateState(data.activity10, setA10);
+
       const compressedImage = await ImageManipulator.manipulateAsync(
         base64Data.startsWith('data') ? base64Data : `data:image/jpeg;base64,${base64Data}`,
         [{ resize: { width: 800 } }],
         { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
       await saveToHistory(compressedImage.base64!, data);
-    } catch (e) { console.error(e); } finally { setIsLoading(false); }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const translateY = scanLineAnim.interpolate({
@@ -201,16 +214,24 @@ function CameraScreen({ onImageCaptured, onRecommendationsFound,
       </View>
       <View style={styles.resultsHalf}>
 
-        {/* Identified Product & Calorie Display */}
-        {(identifiedProduct || calories) && (
-          <View style={styles.productInfoCard}>
+        {/* Identified Product & Calorie Display - Always visible after first scan */}
+        {hasScannedOnce && (
+          <View style={[styles.productInfoCard, isLoading && { opacity: 0.7 }]}>
             <View>
-              <Text style={styles.productLabel}>Identified</Text>
-              <Text style={styles.productName}>{identifiedProduct || "Unknown Item"}</Text>
+              <Text style={styles.productLabel}>{isLoading ? "Analyzing..." : "Identified"}</Text>
+              <Text style={styles.productName}>
+                {isLoading ? "Fetching details..." : (identifiedProduct || "Unknown Item")}
+              </Text>
             </View>
-            <View style={styles.calorieBadge}>
-              <Text style={styles.calorieValue}>{calories}</Text>
-              <Text style={styles.calorieLabel}>kcal</Text>
+            <View style={[styles.calorieBadge, isLoading && { backgroundColor: '#4a4a4a' }]}>
+              {isLoading ? (
+                 <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Text style={styles.calorieValue}>{calories}</Text>
+                  <Text style={styles.calorieLabel}>cal</Text>
+                </>
+              )}
             </View>
           </View>
         )}
@@ -317,7 +338,6 @@ const styles = StyleSheet.create({
   placeholderCenter: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scrollPadding: { paddingBottom: 30 },
 
-  // New Styles for Product Info Card
   productInfoCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -325,7 +345,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     padding: 16,
     borderRadius: 20,
-    marginTop: -30, // Floats the card over the camera view
+    marginTop: -30,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -336,7 +356,7 @@ const styles = StyleSheet.create({
   },
   productLabel: { fontSize: 10, color: '#9E9E9E', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   productName: { fontSize: 20, fontWeight: '800', color: '#1B4D20', marginTop: 2 },
-  calorieBadge: { backgroundColor: '#1B4D20', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12, alignItems: 'center' },
+  calorieBadge: { backgroundColor: '#1B4D20', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12, alignItems: 'center', minWidth: 60 },
   calorieValue: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
   calorieLabel: { color: '#FFFFFF', fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
 });
