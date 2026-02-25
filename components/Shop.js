@@ -70,7 +70,7 @@ export default function Shop({ recommendedProducts }) {
             color="#E0E0E0"
           />
 
-          <Text style={styles.placeholderText}>Search for items to "Burn Back" on Amazon.</Text>
+          <Text style={styles.placeholderText}>Search for items to Burn Back on Amazon.</Text>
 
           {/* Search Input Field */}
           <View style={styles.searchContainer}>
