@@ -92,6 +92,31 @@ export default function ScanHistory({ onTriggerRerun }) {
     return "#757575";
   };
 
+  const getReadableDate = (dateString) => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    const now = new Date();
+
+    // Check if it's today
+    if (date.toDateString() === now.toDateString()) {
+      return `Today at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    // Check if it's yesterday
+    const yesterday = new Date();
+    yesterday.setDate(now.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) {
+      return `Yesterday at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    // Otherwise, format as "Oct 24, 2026"
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
   return (
     <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
       <View style={styles.header}>
@@ -114,7 +139,7 @@ export default function ScanHistory({ onTriggerRerun }) {
                   <Image source={{ uri: formatImageUri(item.uri) }} style={styles.thumb} />
                 </View>
                 <View style={styles.historyDetails}>
-                  <Text style={styles.historyName}>{item.date}</Text>
+                  <Text style={styles.historyName}>{getReadableDate(item.date)}</Text>
                   <Text style={styles.viewResults}>View Analysis Results</Text>
                 </View>
                 <TouchableOpacity onPress={() => confirmDelete(item.id)} style={styles.trashIcon}>
