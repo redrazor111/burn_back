@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MAX_HISTORY } from './constants';
 
 const HISTORY_KEY = 'scan_history';
 
@@ -23,23 +22,20 @@ export const clearAllHistory = async () => {
   }
 };
 
-export const saveToHistory = async (_base64Ignored: string, analysisData: any) => {
+export const saveToHistory = async (name: string, analysis: any) => {
   try {
+    const SCAN_HISTORY_KEY = 'scan_history';
+    const existingHistory = await AsyncStorage.getItem(SCAN_HISTORY_KEY);
+    const history = existingHistory ? JSON.parse(existingHistory) : [];
+
     const newEntry = {
       id: Date.now().toString(),
       date: new Date().toISOString(),
-      analysis: analysisData,
-      // uri is removed from the storage object entirely
+      analysis: analysis // This now contains the correctly selected name/calories
     };
 
-    const existingHistory = await AsyncStorage.getItem(HISTORY_KEY);
-    let history = existingHistory ? JSON.parse(existingHistory) : [];
-
-    history = [newEntry, ...history].slice(0, MAX_HISTORY);
-
-    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-    console.log("Scan saved successfully (text-only)");
-  } catch (error) {
-    console.error("Could not save scan to history:", error);
+    await AsyncStorage.setItem(SCAN_HISTORY_KEY, JSON.stringify([newEntry, ...history].slice(0, 500)));
+  } catch (e) {
+    console.error("Failed to save scan history", e);
   }
 };
