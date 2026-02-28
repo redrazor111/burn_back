@@ -1,47 +1,44 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImageManipulator from 'expo-image-manipulator';
-import { MAX_HISTORY } from './constants';
 
-export const saveToHistory = async (base64Data: string, analysisData: any) => {
+const HISTORY_KEY = 'scan_history';
+const MAX_HISTORY = 100;
+
+export const removeFromHistory = async (id: string) => {
   try {
-    // 1. Ensure the URI has the correct prefix for the manipulator
-    const imageUri = base64Data.startsWith('data:image')
-      ? base64Data
-      : `data:image/jpeg;base64,${base64Data}`;
+    const existing = await AsyncStorage.getItem(HISTORY_KEY);
+    if (!existing) return;
+    const history = JSON.parse(existing);
+    const filtered = history.filter((item: any) => item.id !== id);
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
+  } catch (e) {
+    console.error("Error deleting from history storage:", e);
+  }
+};
 
-    // 2. Shrink the image so it fits in the 2MB CursorWindow
-    // We resize to 800px width and 60% quality
-    const manipulatedImage = await ImageManipulator.manipulateAsync(
-      imageUri,
-      [{ resize: { width: 800 } }],
-      { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-    );
+export const clearAllHistory = async () => {
+  try {
+    await AsyncStorage.removeItem(HISTORY_KEY);
+  } catch (e) {
+    console.error("Error clearing history storage:", e);
+  }
+};
 
-    // 3. Fix the "Type undefined" error by providing a fallback string
-    const compressedBase64 = manipulatedImage.base64 || "";
-
-    if (!compressedBase64) {
-      throw new Error("Failed to compress image");
-    }
-
-    // 4. Prepare the new history item
+export const saveToHistory = async (_base64Ignored: string, analysisData: any) => {
+  try {
     const newEntry = {
       id: Date.now().toString(),
-      date: new Date().toLocaleString(),
-      uri: compressedBase64,
+      date: new Date().toISOString(),
       analysis: analysisData,
+      // uri is removed from the storage object entirely
     };
 
-    // 5. Save to AsyncStorage
-    const existingHistory = await AsyncStorage.getItem('scan_history');
+    const existingHistory = await AsyncStorage.getItem(HISTORY_KEY);
     let history = existingHistory ? JSON.parse(existingHistory) : [];
 
-    // Add to start and trim to max limit
     history = [newEntry, ...history].slice(0, MAX_HISTORY);
 
-    await AsyncStorage.setItem('scan_history', JSON.stringify(history));
-    console.log("Scan saved successfully (compressed)");
-
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    console.log("Scan saved successfully (text-only)");
   } catch (error) {
     console.error("Could not save scan to history:", error);
   }

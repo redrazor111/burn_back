@@ -1,127 +1,130 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
-import React, { useEffect, useState } from 'react';
-import { Alert, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  LayoutAnimation,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  UIManager,
+  View
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MAX_HISTORY } from '../utils/constants';
-import { checkQuota } from '../utils/quotaService'; // Import your quota check
+import { clearAllHistory } from '../utils/historyStorage';
 import { useSubscriptionStatus } from '../utils/subscription';
-import PremiumModal from './PremiumModal'; // Import your Premium Modal
 import StatusCard from './StatusCard';
 
-export default function ScanHistory({ onTriggerRerun }) {
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+export default function ScanHistory() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
-  const navigation = useNavigation();
   const [history, setHistory] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [showPremium, setShowPremium] = useState(false); // Add state for modal
+  const [collapsedSections, setCollapsedSections] = useState({});
   const { isPro } = useSubscriptionStatus();
 
   useEffect(() => {
     const load = async () => {
-      const stored = await AsyncStorage.getItem('scan_history');
-      if (stored) setHistory(JSON.parse(stored));
+      try {
+        const stored = await AsyncStorage.getItem('scan_history');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const historyData = Array.isArray(parsed) ? parsed : [];
+          setHistory(historyData);
+
+          const initialCollapsedState = {};
+          historyData.forEach(item => {
+            const key = getSafeDateKey(item.date);
+            initialCollapsedState[key] = true;
+          });
+          setCollapsedSections(initialCollapsedState);
+        }
+      } catch (e) { console.error(e); }
     };
     if (isFocused) load();
   }, [isFocused]);
 
-  const formatImageUri = (uri) => {
-    if (!uri) return null;
-    return uri.startsWith('data:image') ? uri : `data:image/jpeg;base64,${uri}`;
+  const getSafeDateKey = (dateString) => {
+    if (!dateString) return "Unknown";
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return "Unknown";
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}/${month}/${day}`;
   };
 
-  const deleteHistoryItem = async (id) => {
-    try {
-      const updatedHistory = history.filter(item => item.id !== id);
-      setHistory(updatedHistory);
-      await AsyncStorage.setItem('scan_history', JSON.stringify(updatedHistory));
-      if (selectedItem?.id === id) setSelectedItem(null);
-    } catch (error) {
-      console.error("Failed to delete item:", error);
-    }
-  };
-
-  const confirmDelete = (id) => {
-    Alert.alert("Delete Scan", "Are you sure?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => deleteHistoryItem(id) }
-    ]);
-  };
-
-  const handleRerunFromHistory = async () => {
-    // PRO CHECK: Check quota if user isn't Pro
-    if (!isPro) {
-      const status = await checkQuota();
-      if (status === 'LIMIT_REACHED') {
-        setShowPremium(true);
-        return;
+  const groupedData = useMemo(() => {
+    const groups = {};
+    history.forEach(item => {
+      const key = getSafeDateKey(item.date);
+      if (!groups[key]) {
+        groups[key] = { items: [], totalCalories: 0 };
       }
-    }
+      groups[key].items.push(item);
+      const itemCals = item.analysis?.calories ? Number(item.analysis.calories) : 0;
+      groups[key].totalCalories += itemCals;
+    });
+    return groups;
+  }, [history]);
 
-    if (selectedItem?.uri) {
-      const rawBase64 = selectedItem.uri.replace(/^data:image\/(png|jpg|jpeg);base64,/, "");
-
-      onTriggerRerun(rawBase64);
-      setSelectedItem(null);
-
-      navigation.navigate('Camera');
-    }
+  const toggleSection = (section) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const formatData = (itemData) => {
-    if (!itemData) return { text: "", status: "gray" };
-    return {
-      text: typeof itemData === 'string' ? itemData : JSON.stringify(itemData),
-      status: getStatusColor(itemData)
-    };
-  };
-
-  const getStatusColor = (data) => {
-    try {
-      const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-      const status = parsed?.status?.toUpperCase();
-
-      if (status === "UNHEALTHY") return "#FF5252"; // Red
-      if (status === "MODERATE") return "#FFB300";  // Orange/Yellow
-      if (status === "HEALTHY") return "#2E7D32";   // Green
-    } catch {
-      return "#757575";
-    }
-    return "#757575";
-  };
-
-  const getReadableDate = (dateString) => {
-    if (!dateString) return "";
-    const date = new Date(dateString);
+  const getReadableDate = (dateKey) => {
+    if (!dateKey || dateKey === "Unknown") return "Unknown Date";
+    const parts = dateKey.split('/');
+    const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
     const now = new Date();
-
-    // Check if it's today
-    if (date.toDateString() === now.toDateString()) {
-      return `Today at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    }
-
-    // Check if it's yesterday
+    if (date.toDateString() === now.toDateString()) return "Today";
     const yesterday = new Date();
     yesterday.setDate(now.getDate() - 1);
-    if (date.toDateString() === yesterday.toDateString()) {
-      return `Yesterday at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    }
+    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+  };
 
-    // Otherwise, format as "Oct 24, 2026"
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+  const handleDeleteAll = () => {
+    Alert.alert(
+      "Delete All History",
+      "This will permanently erase all past records. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete Everything",
+          style: "destructive",
+          onPress: async () => {
+            await clearAllHistory();
+            setHistory([]);
+          }
+        }
+      ]
+    );
   };
 
   return (
     <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>History</Text>
-        <Text style={styles.subtitle}>Previous scanned images, up to {MAX_HISTORY} images.</Text>
+        <View style={styles.headerTopRow}>
+            <Text style={styles.title}>History</Text>
+            {history.length > 0 && (
+                <TouchableOpacity onPress={handleDeleteAll} style={styles.deleteAllBtn}>
+                    <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF5252" />
+                    <Text style={styles.deleteAllText}>Clear History</Text>
+                </TouchableOpacity>
+            )}
+        </View>
+        <Text style={styles.subtitle}>Text-only records for maximum storage</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContentList} showsVerticalScrollIndicator={false}>
@@ -131,124 +134,90 @@ export default function ScanHistory({ onTriggerRerun }) {
             <Text style={styles.placeholderText}>No scans found yet.</Text>
           </View>
         ) : (
-          <View style={styles.listContainer}>
-            <Text style={styles.sectionLabel}>RECENT SCANS</Text>
-            {history.map((item) => (
-              <TouchableOpacity key={item.id} style={styles.historyCard} onPress={() => setSelectedItem(item)}>
-                <View style={styles.historyIconBg}>
-                  <Image source={{ uri: formatImageUri(item.uri) }} style={styles.thumb} />
+          Object.keys(groupedData).sort((a, b) => b.localeCompare(a)).map((dateKey) => (
+            <View key={dateKey} style={styles.sectionContainer}>
+              <TouchableOpacity
+                style={styles.sectionHeader}
+                onPress={() => toggleSection(dateKey)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.sectionHeaderTextGroup}>
+                  <Text style={styles.sectionLabel}>{getReadableDate(dateKey).toUpperCase()}</Text>
+                  <Text style={styles.sectionTotalCalories}>
+                    {groupedData[dateKey].totalCalories} cal
+                  </Text>
                 </View>
-                <View style={styles.historyDetails}>
-                  <Text style={styles.historyName}>{getReadableDate(item.date)}</Text>
-                  <Text style={styles.viewResults}>View Analysis Results</Text>
-                </View>
-                <TouchableOpacity onPress={() => confirmDelete(item.id)} style={styles.trashIcon}>
-                  <MaterialCommunityIcons name="delete-outline" size={22} color="#FF5252" />
-                </TouchableOpacity>
-                <MaterialCommunityIcons name="chevron-right" size={20} color="#CCC" />
+                <MaterialCommunityIcons
+                  name={collapsedSections[dateKey] ? "chevron-down" : "chevron-up"}
+                  size={20}
+                  color="#9E9E9E"
+                />
               </TouchableOpacity>
-            ))}
-          </View>
+
+              {!collapsedSections[dateKey] && (
+                <View style={styles.itemsContainer}>
+                  {groupedData[dateKey].items.map((item) => (
+                    <TouchableOpacity key={item.id} style={styles.historyCard} onPress={() => setSelectedItem(item)}>
+                      <View style={styles.historyIconBg}>
+                        <MaterialCommunityIcons name="food-apple" size={26} color="#2E7D32" />
+                      </View>
+                      <View style={styles.historyDetails}>
+                        <Text style={styles.historyTime}>
+                          {(() => {
+                            const d = new Date(item.date);
+                            if (isNaN(d.getTime())) return "00:00 AM";
+                            let hours = d.getHours();
+                            const minutes = String(d.getMinutes()).padStart(2, '0');
+                            const ampm = hours >= 12 ? 'PM' : 'AM';
+                            hours = hours % 12 || 12;
+                            return `${hours}:${minutes} ${ampm}`;
+                          })()}
+                        </Text>
+                        <Text style={styles.historyFoodName}>{item.analysis?.identifiedProduct || "Unknown Item"}</Text>
+                        <Text style={styles.itemCalorieSnippet}>{item.analysis?.calories || 0} cal</Text>
+                      </View>
+                      <MaterialCommunityIcons name="chevron-right" size={20} color="#CCC" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          ))
         )}
       </ScrollView>
 
+      {/* Detail Modal */}
       <Modal visible={!!selectedItem} animationType="slide">
-        <View style={[styles.modalContent, { paddingTop: insets.top }]}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setSelectedItem(null)}>
-              <MaterialCommunityIcons name="close" size={28} color="#333" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Past Result</Text>
-            <TouchableOpacity onPress={handleRerunFromHistory}>
-              <MaterialCommunityIcons name="play-circle" size={28} color="#2E7D32" />
-            </TouchableOpacity>
+        {selectedItem && (
+          <View style={[styles.modalContent, { paddingTop: insets.top }]}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setSelectedItem(null)}>
+                <MaterialCommunityIcons name="close" size={28} color="#333" />
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Analysis Details</Text>
+              <View style={{ width: 28 }} />
+            </View>
+            <ScrollView contentContainerStyle={styles.modalScroll}>
+              <View style={styles.textDetailHeader}>
+                 <MaterialCommunityIcons name="checkbox-marked-circle-outline" size={40} color="#2E7D32" />
+                 <Text style={styles.detailProductName}>{selectedItem.analysis?.identifiedProduct}</Text>
+                 <Text style={styles.detailCalories}>{selectedItem.analysis?.calories} Total Calories</Text>
+              </View>
+              <View style={styles.divider} />
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+                <StatusCard
+                  key={num}
+                  title={["Running", "Walking", "Weights", "Cycling", "Swimming", "HIIT", "Yoga", "Rowing", "Jump Rope", "Hiking"][num - 1]}
+                  data={selectedItem.analysis[`activity${num}`]}
+                  icon={["run", "walk", "weight-lifter", "bike", "swim", "lightning-bolt", "yoga", "rowing", "jump-rope", "image-filter-hdr"][num - 1]}
+                  isLocked={num > 2 && !isPro}
+                  isParentLoading={false}
+                />
+              ))}
+            </ScrollView>
           </View>
-
-          <ScrollView contentContainerStyle={styles.modalScroll} showsVerticalScrollIndicator={false}>
-            {selectedItem && (
-              <>
-                <Image source={{ uri: formatImageUri(selectedItem.uri) }} style={styles.fullImage} />
-
-                <TouchableOpacity style={styles.rerunLargeButton} onPress={handleRerunFromHistory}>
-                  <MaterialCommunityIcons name="refresh" size={20} color="#fff" />
-                  <Text style={styles.rerunLargeText}>Re-run This Analysis</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.deleteLink} onPress={() => confirmDelete(selectedItem.id)}>
-                  <Text style={styles.deleteLinkText}>Delete this entry</Text>
-                </TouchableOpacity>
-
-                <StatusCard
-                  title="Running"
-                  data={formatData(selectedItem.analysis.activity1)}
-                  icon="run"
-                  isLocked={false}
-                />
-                <StatusCard
-                  title="Walking"
-                  data={formatData(selectedItem.analysis.activity2)}
-                  icon="walk"
-                  isLocked={false}
-                />
-                <StatusCard
-                  title="Weight Training"
-                  data={formatData(selectedItem.analysis.activity3)}
-                  icon="weight-lifter"
-                  isLocked={!isPro}
-                />
-                <StatusCard
-                  title="Cycling"
-                  data={formatData(selectedItem.analysis.activity4)}
-                  icon="bike"
-                  isLocked={!isPro}
-                />
-                <StatusCard
-                  title="Swimming"
-                  data={formatData(selectedItem.analysis.activity5)}
-                  icon="swim"
-                  isLocked={!isPro}
-                />
-                <StatusCard
-                  title="HIIT Class"
-                  data={formatData(selectedItem.analysis.activity6)}
-                  icon="lightning-bolt"
-                  isLocked={!isPro}
-                />
-                <StatusCard
-                  title="Yoga/Pilates"
-                  data={formatData(selectedItem.analysis.activity7)}
-                  icon="yoga"
-                  isLocked={!isPro}
-                />
-                <StatusCard
-                  title="Rowing"
-                  data={formatData(selectedItem.analysis.activity8)}
-                  icon="rowing"
-                  isLocked={!isPro}
-                />
-                <StatusCard
-                  title="Jump Rope"
-                  data={formatData(selectedItem.analysis.activity9)}
-                  icon="jump-rope"
-                  isLocked={!isPro}
-                />
-                <StatusCard
-                  title="Hiking"
-                  data={formatData(selectedItem.analysis.activity10)}
-                  icon="image-filter-hdr"
-                  isLocked={!isPro}
-                />
-              </>
-            )}
-          </ScrollView>
-        </View>
+        )}
       </Modal>
-
-      {/* Premium Modal for history re-runs */}
-      <PremiumModal
-        visible={showPremium}
-        onClose={() => setShowPremium(false)}
-      />
     </View>
   );
 }
@@ -256,27 +225,31 @@ export default function ScanHistory({ onTriggerRerun }) {
 const styles = StyleSheet.create({
   fullScreen: { flex: 1, backgroundColor: '#FBFBFB' },
   header: { paddingHorizontal: 20, paddingVertical: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { fontSize: 24, fontWeight: '800', color: '#1A1A1A', letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, color: '#757575', marginTop: 4 },
-  scrollContentList: { padding: 20, paddingBottom: 40 },
-  placeholderContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
-  placeholderText: { textAlign: 'center', color: '#9E9E9E', marginTop: 15, fontSize: 16 },
-  listContainer: { width: '100%' },
-  sectionLabel: { fontSize: 12, fontWeight: '700', color: '#9E9E9E', letterSpacing: 1, marginBottom: 15 },
-  historyCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 12, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, borderWidth: 1, borderColor: '#F1F3F5' },
-  historyIconBg: { width: 52, height: 52, borderRadius: 12, backgroundColor: '#F1F3F5', overflow: 'hidden', marginRight: 12 },
-  thumb: { width: '100%', height: '100%' },
+  subtitle: { fontSize: 13, color: '#757575', marginTop: 4 },
+  deleteAllBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF0F0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  deleteAllText: { color: '#FF5252', fontSize: 11, fontWeight: '800', marginLeft: 4 },
+  scrollContentList: { paddingHorizontal: 20, paddingBottom: 40 },
+  sectionContainer: { marginTop: 20 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#EEE', marginBottom: 10 },
+  sectionHeaderTextGroup: { flexDirection: 'row', alignItems: 'baseline' },
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: '#9E9E9E', letterSpacing: 1 },
+  sectionTotalCalories: { fontSize: 13, fontWeight: '700', color: '#2E7D32', marginLeft: 10 },
+  historyCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 5 },
+  historyIconBg: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   historyDetails: { flex: 1 },
-  historyName: { fontSize: 16, fontWeight: '700', color: '#212529', marginBottom: 2 },
-  viewResults: { fontSize: 13, color: '#2E7D32', fontWeight: '600' },
-  trashIcon: { padding: 10, marginLeft: 4, borderRadius: 20, backgroundColor: '#FFF5F5' },
-  modalContent: { flex: 1, backgroundColor: '#F8F9FA' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, alignItems: 'center', backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E9ECEF' },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: '#212529' },
+  historyTime: { fontSize: 11, fontWeight: '700', color: '#BDBDBD' },
+  historyFoodName: { fontSize: 16, fontWeight: '800', color: '#212529', marginTop: 1 },
+  itemCalorieSnippet: { fontSize: 13, color: '#2E7D32', fontWeight: '700', marginTop: 2 },
+  modalContent: { flex: 1, backgroundColor: '#FFFFFF' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: '#1A1A1A' },
   modalScroll: { padding: 20 },
-  fullImage: { width: '100%', height: 280, borderRadius: 20, marginBottom: 20, backgroundColor: '#E9ECEF' },
-  rerunLargeButton: { backgroundColor: '#2E7D32', paddingVertical: 16, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', shadowColor: '#2E7D32', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 4 },
-  rerunLargeText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16, marginLeft: 8 },
-  deleteLink: { marginTop: 16, marginBottom: 24, padding: 8, alignSelf: 'center' },
-  deleteLinkText: { color: '#FA5252', fontWeight: '600', fontSize: 14, textDecorationLine: 'underline' }
+  textDetailHeader: { alignItems: 'center', paddingVertical: 20 },
+  detailProductName: { fontSize: 22, fontWeight: '900', color: '#1A1A1A', marginTop: 10 },
+  detailCalories: { fontSize: 18, fontWeight: '700', color: '#2E7D32', marginTop: 5 },
+  divider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: 20 },
+  placeholderContainer: { alignItems: 'center', marginTop: 100 },
+  placeholderText: { color: '#BDBDBD', marginTop: 15, fontSize: 16, fontWeight: '600' }
 });
