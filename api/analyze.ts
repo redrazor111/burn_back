@@ -38,52 +38,37 @@ export default async function handler(req: any, res: any) {
 
     const dynamicInstructions = isPro
       ? "Calculate the exact duration for ALL 10 activities based on the calories identified."
-      : "ONLY calculate the duration for Activity 1 and 2. For activities 3-10, use the exact placeholder values provided in the JSON structure below.";
+      : "ONLY calculate the duration for Activity 1 (Running) and Activity 2 (Walking). For activities 3-10, use the 'WAITING' status and 'Premium Feature' summary.";
 
-    // THE SCIENTIFIC PROMPT USING WEIGHT
     const prompt = `
     USER CONTEXT:
-    - User Profile: ${age} year old ${gender}.
-    - User Weight: ${weight} kg.
-    - Daily Calorie Target: ${targetCalories} cal.
+    - Profile: ${age} year old ${gender}, weight ${weight} kg.
+    - Daily Target: ${targetCalories} cal.
 
     INSTRUCTIONS:
-    1. Identify the meal or food items in the image.
-    2. Provide a best estimate of the total calories as a plain integer.
+    1. Identify the meal/food items. Provide THREE distinct possible interpretations (e.g., if it's a burger, Interpretation 1 might be 'Cheese Burger', Interpretation 2 'Veggie Burger', Interpretation 3 'Double Beef Burger').
+    2. For EACH interpretation, estimate the total calories.
     3. ${dynamicInstructions}
 
-    4. SCIENTIFIC EXERCISE CALCULATION:
-       Calculate the EXACT duration (in minutes) required to burn the estimated calories for this specific meal.
-       You MUST use the standard Metabolic Equivalent of Task (MET) formula:
-       Calories per Minute = (MET * ${weight} * 3.5) / 200.
-       Duration (Minutes) = Total_Meal_Calories / Calories_per_Minute.
+    4. MATHEMATICAL FORMULA:
+       (Use the calories from Interpretation 1 for the activity calculations below).
+       Step A: Calories_Per_Minute = (MET * ${weight} * 3.5) / 200
+       Step B: Duration_Minutes = Interpretation_1_Calories / Calories_Per_Minute
 
-       Use these specific MET values:
-       - Running (moderate): 10.0
-       - Walking (brisk): 3.5
-       - Weight Training: 6.0
-       - Cycling (steady): 7.5
-       - Swimming (laps): 8.0
-       - HIIT: 11.0
-       - Yoga: 2.5
-       - Rowing: 7.0
-       - Jump Rope: 12.0
-       - Hiking (uphill): 6.5
+    5. JSON CONTENT RULES:
+       - identifiedOptions: An array of 3 objects, each with "name" and "calories".
+       - activity[X].summary: Use the calories from interpreted option 1.
 
-    5. STATUS LABELS:
-       - 'HEALTHY' if the food is < 400 cal.
-       - 'MODERATE' if the food is 400-800 cal.
-       - 'UNHEALTHY' if the food is > 800 cal.
-
-    6. SUMMARY CONTENT:
-       The "summary" string MUST start with the calculation result (e.g., "42 minutes") followed by a short, personalized fitness tip for a ${age}yo ${gender} weighing ${weight}kg.
-
-    Return ONLY this JSON structure:
+    Return ONLY this JSON:
     {
-      "identifiedProduct": "string",
+      "identifiedOptions": [
+        {"name": "Interpretation 1", "calories": 0},
+        {"name": "Interpretation 2", "calories": 0},
+        {"name": "Interpretation 3", "calories": 0}
+      ],
       "calories": 0,
-      "activity1": {"status": "HEALTHY | MODERATE | UNHEALTHY", "summary": "string"},
-      "activity2": {"status": "HEALTHY | MODERATE | UNHEALTHY", "summary": "string"},
+      "activity1": {"status": "string", "summary": "string"},
+      "activity2": {"status": "string", "summary": "string"},
       "activity3": ${isPro ? `{"status": "string", "summary": "string"}` : `{"status": "WAITING", "summary": "Premium Feature"}`},
       "activity4": ${isPro ? `{"status": "string", "summary": "string"}` : `{"status": "WAITING", "summary": "Premium Feature"}`},
       "activity5": ${isPro ? `{"status": "string", "summary": "string"}` : `{"status": "WAITING", "summary": "Premium Feature"}`},
