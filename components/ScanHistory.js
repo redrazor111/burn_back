@@ -23,6 +23,8 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+const SCAN_HISTORY_KEY = 'scan_history';
+
 export default function ScanHistory() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
@@ -32,46 +34,40 @@ export default function ScanHistory() {
   const { isPro } = useSubscriptionStatus();
 
   useEffect(() => {
-    const load = async () => {
+    const loadData = async () => {
       try {
-        const stored = await AsyncStorage.getItem('scan_history');
-        if (stored) {
-          const parsed = JSON.parse(stored);
+        const storedScans = await AsyncStorage.getItem(SCAN_HISTORY_KEY);
+
+        if (storedScans) {
+          const parsed = JSON.parse(storedScans);
           const historyData = Array.isArray(parsed) ? parsed : [];
           setHistory(historyData);
 
           const initialCollapsedState = {};
           historyData.forEach(item => {
-            const key = getSafeDateKey(item.date);
-            initialCollapsedState[key] = true;
+            initialCollapsedState[getSafeDateKey(item.date)] = true;
           });
           setCollapsedSections(initialCollapsedState);
         }
       } catch (e) { console.error(e); }
     };
-    if (isFocused) load();
+    if (isFocused) loadData();
   }, [isFocused]);
 
   const getSafeDateKey = (dateString) => {
     if (!dateString) return "Unknown";
     const d = new Date(dateString);
     if (isNaN(d.getTime())) return "Unknown";
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}/${month}/${day}`;
+    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
   };
 
   const groupedData = useMemo(() => {
     const groups = {};
     history.forEach(item => {
       const key = getSafeDateKey(item.date);
-      if (!groups[key]) {
-        groups[key] = { items: [], totalCalories: 0 };
-      }
+      if (!groups[key]) groups[key] = { items: [], totalCalories: 0 };
       groups[key].items.push(item);
-      const itemCals = item.analysis?.calories ? Number(item.analysis.calories) : 0;
-      groups[key].totalCalories += itemCals;
+      groups[key].totalCalories += Number(item.analysis?.calories || 0);
     });
     return groups;
   }, [history]);
@@ -96,18 +92,14 @@ export default function ScanHistory() {
 
   const handleDeleteAll = () => {
     Alert.alert(
-      "Delete All History",
-      "This will permanently erase all past records. This cannot be undone.",
+      "Delete All Scan History",
+      "This will permanently erase all past meal records.",
       [
         { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete Everything",
-          style: "destructive",
-          onPress: async () => {
+        { text: "Delete", style: "destructive", onPress: async () => {
             await clearAllHistory();
             setHistory([]);
-          }
-        }
+        }}
       ]
     );
   };
@@ -116,15 +108,15 @@ export default function ScanHistory() {
     <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
-            <Text style={styles.title}>History</Text>
-            {history.length > 0 && (
-                <TouchableOpacity onPress={handleDeleteAll} style={styles.deleteAllBtn}>
-                    <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF5252" />
-                    <Text style={styles.deleteAllText}>Clear History</Text>
-                </TouchableOpacity>
-            )}
+          <Text style={styles.title}>Scan History</Text>
+          {history.length > 0 && (
+            <TouchableOpacity onPress={handleDeleteAll} style={styles.deleteAllBtn}>
+              <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF5252" />
+              <Text style={styles.deleteAllText}>Clear</Text>
+            </TouchableOpacity>
+          )}
         </View>
-        <Text style={styles.subtitle}>Text-only records for maximum storage</Text>
+        <Text style={styles.subtitle}>Tracked meals and calories</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContentList} showsVerticalScrollIndicator={false}>
@@ -136,22 +128,12 @@ export default function ScanHistory() {
         ) : (
           Object.keys(groupedData).sort((a, b) => b.localeCompare(a)).map((dateKey) => (
             <View key={dateKey} style={styles.sectionContainer}>
-              <TouchableOpacity
-                style={styles.sectionHeader}
-                onPress={() => toggleSection(dateKey)}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(dateKey)}>
                 <View style={styles.sectionHeaderTextGroup}>
                   <Text style={styles.sectionLabel}>{getReadableDate(dateKey).toUpperCase()}</Text>
-                  <Text style={styles.sectionTotalCalories}>
-                    {groupedData[dateKey].totalCalories} cal
-                  </Text>
+                  <Text style={styles.sectionTotalCalories}>{groupedData[dateKey].totalCalories} cal</Text>
                 </View>
-                <MaterialCommunityIcons
-                  name={collapsedSections[dateKey] ? "chevron-down" : "chevron-up"}
-                  size={20}
-                  color="#9E9E9E"
-                />
+                <MaterialCommunityIcons name={collapsedSections[dateKey] ? "chevron-down" : "chevron-up"} size={20} color="#9E9E9E" />
               </TouchableOpacity>
 
               {!collapsedSections[dateKey] && (
@@ -165,12 +147,11 @@ export default function ScanHistory() {
                         <Text style={styles.historyTime}>
                           {(() => {
                             const d = new Date(item.date);
-                            if (isNaN(d.getTime())) return "00:00 AM";
-                            let hours = d.getHours();
-                            const minutes = String(d.getMinutes()).padStart(2, '0');
-                            const ampm = hours >= 12 ? 'PM' : 'AM';
-                            hours = hours % 12 || 12;
-                            return `${hours}:${minutes} ${ampm}`;
+                            let h = d.getHours();
+                            const m = String(d.getMinutes()).padStart(2, '0');
+                            const ampm = h >= 12 ? 'PM' : 'AM';
+                            h = h % 12 || 12;
+                            return `${h}:${m} ${ampm}`;
                           })()}
                         </Text>
                         <Text style={styles.historyFoodName}>{item.analysis?.identifiedProduct || "Unknown Item"}</Text>
@@ -186,7 +167,6 @@ export default function ScanHistory() {
         )}
       </ScrollView>
 
-      {/* Detail Modal */}
       <Modal visible={!!selectedItem} animationType="slide">
         {selectedItem && (
           <View style={[styles.modalContent, { paddingTop: insets.top }]}>
@@ -226,22 +206,22 @@ const styles = StyleSheet.create({
   fullScreen: { flex: 1, backgroundColor: '#FBFBFB' },
   header: { paddingHorizontal: 20, paddingVertical: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  title: { fontSize: 24, fontWeight: '800', color: '#1A1A1A', letterSpacing: -0.5 },
+  title: { fontSize: 24, fontWeight: '800', color: '#1A1A1A' },
   subtitle: { fontSize: 13, color: '#757575', marginTop: 4 },
   deleteAllBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF0F0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
   deleteAllText: { color: '#FF5252', fontSize: 11, fontWeight: '800', marginLeft: 4 },
   scrollContentList: { paddingHorizontal: 20, paddingBottom: 40 },
   sectionContainer: { marginTop: 20 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#EEE', marginBottom: 10 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   sectionHeaderTextGroup: { flexDirection: 'row', alignItems: 'baseline' },
   sectionLabel: { fontSize: 11, fontWeight: '800', color: '#9E9E9E', letterSpacing: 1 },
   sectionTotalCalories: { fontSize: 13, fontWeight: '700', color: '#2E7D32', marginLeft: 10 },
-  historyCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 5 },
+  historyCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#F5F5F5' },
   historyIconBg: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   historyDetails: { flex: 1 },
   historyTime: { fontSize: 11, fontWeight: '700', color: '#BDBDBD' },
-  historyFoodName: { fontSize: 16, fontWeight: '800', color: '#212529', marginTop: 1 },
-  itemCalorieSnippet: { fontSize: 13, color: '#2E7D32', fontWeight: '700', marginTop: 2 },
+  historyFoodName: { fontSize: 16, fontWeight: '800', color: '#212529' },
+  itemCalorieSnippet: { fontSize: 13, color: '#2E7D32', fontWeight: '700' },
   modalContent: { flex: 1, backgroundColor: '#FFFFFF' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   modalTitle: { fontSize: 18, fontWeight: '800', color: '#1A1A1A' },

@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Purchases from 'react-native-purchases';
-import { GOOGLE_API_KEY_IN_RC, MAX_SEARCHES } from '../utils/constants';
+import { GOOGLE_API_KEY_IN_RC, MAX_ACTIVITIES, MAX_SEARCHES } from '../utils/constants';
 
 export default function PremiumModal({ visible, onClose }) {
   const [packageToBuy, setPackageToBuy] = useState(null);
@@ -74,13 +74,14 @@ export default function PremiumModal({ visible, onClose }) {
 
           <Text style={styles.title}>Unlock BurnBack Premium</Text>
           <Text style={styles.description}>
-            You have reached your <Text style={styles.boldText}>{MAX_SEARCHES}</Text> daily scans. Upgrade to Premium for the following features:
+            You have reached your <Text style={styles.boldText}>{MAX_SEARCHES}</Text> daily scans or <Text style={styles.boldText}>{MAX_ACTIVITIES}</Text> logging activity. Upgrade to Premium for the following features:
           </Text>
 
           <View style={styles.featureList}>
             {[
               "Unlimited Scans",
-              "Extra Activities"
+              "Unlimited Activities",
+              "Detail Extra Activities"
             ].map((feature, index) => (
               <View key={index} style={styles.featureItem}>
                 <MaterialCommunityIcons name="check-circle" size={18} color="#2E7D32" />

@@ -18,13 +18,18 @@ export default async function handler(req: any, res: any) {
   if (!API_KEY) return res.status(500).json({ error: "Server configuration missing API Key" });
 
   try {
-    // 1. EXTRACT NEW USER CONTEXT FIELDS
     const { base64Data, isPro, userContext } = req.body;
-    const { gender = "unknown", age = "unknown", targetCalories = "2000" } = userContext || {};
+
+    const {
+      gender = "Male",
+      age = "25",
+      targetCalories = "2000",
+      weight = "70"
+    } = userContext || {};
 
     const genAI = new GoogleGenerativeAI(API_KEY);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-lite", // Note: Ensure you are using a valid model string like gemini-2.0-flash
+      model: "gemini-2.5-flash-lite",
       generationConfig: { responseMimeType: "application/json" },
     });
 
@@ -32,13 +37,14 @@ export default async function handler(req: any, res: any) {
     const imagePart = { inlineData: { data: base64Content, mimeType: "image/jpeg" } };
 
     const dynamicInstructions = isPro
-      ? "Calculate the duration for ALL 10 activities."
+      ? "Calculate the exact duration for ALL 10 activities based on the calories identified."
       : "ONLY calculate the duration for Activity 1 and 2. For activities 3-10, use the exact placeholder values provided in the JSON structure below.";
 
-    // 2. UPDATE PROMPT WITH USER CONTEXT
+    // THE SCIENTIFIC PROMPT USING WEIGHT
     const prompt = `
     USER CONTEXT:
     - User Profile: ${age} year old ${gender}.
+    - User Weight: ${weight} kg.
     - Daily Calorie Target: ${targetCalories} cal.
 
     INSTRUCTIONS:
@@ -46,28 +52,31 @@ export default async function handler(req: any, res: any) {
     2. Provide a best estimate of the total calories as a plain integer.
     3. ${dynamicInstructions}
 
-    4. PERSONALIZED CALCULATION:
-       When calculating exercise durations, adjust the time based specifically on a ${age} year old ${gender}. Use standard MET (Metabolic Equivalent of Task) values tailored to this demographic.
+    4. SCIENTIFIC EXERCISE CALCULATION:
+       Calculate the EXACT duration (in minutes) required to burn the estimated calories for this specific meal.
+       You MUST use the standard Metabolic Equivalent of Task (MET) formula:
+       Calories per Minute = (MET * ${weight} * 3.5) / 200.
+       Duration (Minutes) = Total_Meal_Calories / Calories_per_Minute.
+
+       Use these specific MET values:
+       - Running (moderate): 10.0
+       - Walking (brisk): 3.5
+       - Weight Training: 6.0
+       - Cycling (steady): 7.5
+       - Swimming (laps): 8.0
+       - HIIT: 11.0
+       - Yoga: 2.5
+       - Rowing: 7.0
+       - Jump Rope: 12.0
+       - Hiking (uphill): 6.5
 
     5. STATUS LABELS:
-       - Use 'HEALTHY' if the food fits well within a ${targetCalories} cal daily limit and is nutritious.
-       - Use 'MODERATE' if the food has average processing or balanced calories.
-       - Use 'UNHEALTHY' if the food makes hitting a ${targetCalories} cal goal difficult or is highly processed.
+       - 'HEALTHY' if the food is < 400 cal.
+       - 'MODERATE' if the food is 400-800 cal.
+       - 'UNHEALTHY' if the food is > 800 cal.
 
-    6. ACTIVITIES MAPPING:
-       - Activity 1: Running (moderate pace)
-       - Activity 2: Walking (brisk pace)
-       - Activity 3: Weight Training (high intensity)
-       - Activity 4: Cycling (steady pace)
-       - Activity 5: Swimming (laps)
-       - Activity 6: HIIT/Exercise Class
-       - Activity 7: Yoga/Pilates
-       - Activity 8: Rowing
-       - Activity 9: Jump Rope
-       - Activity 10: Hiking (uphill)
-
-    7. SUMMARY CONTENT:
-       - Start with the duration (e.g., "42 minutes") followed by a short helpful tip personalized for a ${age}yo ${gender}.
+    6. SUMMARY CONTENT:
+       The "summary" string MUST start with the calculation result (e.g., "42 minutes") followed by a short, personalized fitness tip for a ${age}yo ${gender} weighing ${weight}kg.
 
     Return ONLY this JSON structure:
     {
@@ -88,13 +97,9 @@ export default async function handler(req: any, res: any) {
     `;
 
     const result = await model.generateContent([prompt, imagePart]);
-    const response = await result.response;
-    const text = response.text();
-
+    const text = (await result.response).text();
     return res.status(200).json(JSON.parse(text));
-
   } catch (error: any) {
-    console.error("Vercel Backend Error:", error);
     return res.status(500).json({ error: error.message });
   }
 }

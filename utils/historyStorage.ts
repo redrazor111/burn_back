@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MAX_HISTORY } from './constants';
 
 const HISTORY_KEY = 'scan_history';
-const MAX_HISTORY = 100;
 
 export const removeFromHistory = async (id: string) => {
   try {
