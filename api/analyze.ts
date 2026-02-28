@@ -24,7 +24,7 @@ export default async function handler(req: any, res: any) {
 
     const genAI = new GoogleGenerativeAI(API_KEY);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash", // Note: Ensure you are using a valid model string like gemini-2.0-flash
+      model: "gemini-2.5-flash-lite", // Note: Ensure you are using a valid model string like gemini-2.0-flash
       generationConfig: { responseMimeType: "application/json" },
     });
 
