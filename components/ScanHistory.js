@@ -16,8 +16,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { clearAllHistory } from '../utils/historyStorage';
-import { useSubscriptionStatus } from '../utils/subscription';
-import StatusCard from './StatusCard';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -31,13 +29,11 @@ export default function ScanHistory() {
   const [history, setHistory] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState({});
-  const { isPro } = useSubscriptionStatus();
 
   useEffect(() => {
     const loadData = async () => {
       try {
         const storedScans = await AsyncStorage.getItem(SCAN_HISTORY_KEY);
-
         if (storedScans) {
           const parsed = JSON.parse(storedScans);
           const historyData = Array.isArray(parsed) ? parsed : [];
@@ -167,6 +163,7 @@ export default function ScanHistory() {
         )}
       </ScrollView>
 
+      {/* MINIMALIST DETAIL MODAL */}
       <Modal visible={!!selectedItem} animationType="slide">
         {selectedItem && (
           <View style={[styles.modalContent, { paddingTop: insets.top }]}>
@@ -174,27 +171,26 @@ export default function ScanHistory() {
               <TouchableOpacity onPress={() => setSelectedItem(null)}>
                 <MaterialCommunityIcons name="close" size={28} color="#333" />
               </TouchableOpacity>
-              <Text style={styles.modalTitle}>Analysis Details</Text>
+              <Text style={styles.modalTitle}>Meal Details</Text>
               <View style={{ width: 28 }} />
             </View>
-            <ScrollView contentContainerStyle={styles.modalScroll}>
-              <View style={styles.textDetailHeader}>
-                 <MaterialCommunityIcons name="checkbox-marked-circle-outline" size={40} color="#2E7D32" />
-                 <Text style={styles.detailProductName}>{selectedItem.analysis?.identifiedProduct}</Text>
-                 <Text style={styles.detailCalories}>{selectedItem.analysis?.calories} Total Calories</Text>
-              </View>
-              <View style={styles.divider} />
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
-                <StatusCard
-                  key={num}
-                  title={["Running", "Walking", "Weights", "Cycling", "Swimming", "HIIT", "Yoga", "Rowing", "Jump Rope", "Hiking"][num - 1]}
-                  data={selectedItem.analysis[`activity${num}`]}
-                  icon={["run", "walk", "weight-lifter", "bike", "swim", "lightning-bolt", "yoga", "rowing", "jump-rope", "image-filter-hdr"][num - 1]}
-                  isLocked={num > 2 && !isPro}
-                  isParentLoading={false}
-                />
-              ))}
-            </ScrollView>
+
+            <View style={styles.textDetailHeader}>
+               <View style={styles.bigIconBg}>
+                 <MaterialCommunityIcons name="food-variant" size={50} color="#2E7D32" />
+               </View>
+               <Text style={styles.detailProductName}>{selectedItem.analysis?.identifiedProduct}</Text>
+               <View style={styles.calorieBadge}>
+                 <Text style={styles.detailCalories}>{selectedItem.analysis?.calories} kcal</Text>
+               </View>
+               <Text style={styles.detailDate}>Logged on {getReadableDate(getSafeDateKey(selectedItem.date))}</Text>
+            </View>
+
+            <View style={styles.modalFooter}>
+               <TouchableOpacity style={styles.closeFullBtn} onPress={() => setSelectedItem(null)}>
+                 <Text style={styles.closeFullBtnText}>Close Analysis</Text>
+               </TouchableOpacity>
+            </View>
           </View>
         )}
       </Modal>
@@ -222,14 +218,18 @@ const styles = StyleSheet.create({
   historyTime: { fontSize: 11, fontWeight: '700', color: '#BDBDBD' },
   historyFoodName: { fontSize: 16, fontWeight: '800', color: '#212529' },
   itemCalorieSnippet: { fontSize: 13, color: '#2E7D32', fontWeight: '700' },
-  modalContent: { flex: 1, backgroundColor: '#FFFFFF' },
+  modalContent: { flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'space-between' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   modalTitle: { fontSize: 18, fontWeight: '800', color: '#1A1A1A' },
-  modalScroll: { padding: 20 },
-  textDetailHeader: { alignItems: 'center', paddingVertical: 20 },
-  detailProductName: { fontSize: 22, fontWeight: '900', color: '#1A1A1A', marginTop: 10 },
-  detailCalories: { fontSize: 18, fontWeight: '700', color: '#2E7D32', marginTop: 5 },
-  divider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: 20 },
+  textDetailHeader: { alignItems: 'center', flex: 1, justifyContent: 'center', paddingHorizontal: 30 },
+  bigIconBg: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  detailProductName: { fontSize: 26, fontWeight: '900', color: '#1A1A1A', textAlign: 'center' },
+  calorieBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, marginTop: 15 },
+  detailCalories: { fontSize: 20, fontWeight: '800', color: '#2E7D32' },
+  detailDate: { fontSize: 14, color: '#9E9E9E', marginTop: 20, fontWeight: '600' },
+  modalFooter: { padding: 20, borderTopWidth: 1, borderTopColor: '#F0F0F0' },
+  closeFullBtn: { backgroundColor: '#1B4D20', paddingVertical: 16, borderRadius: 15, alignItems: 'center' },
+  closeFullBtnText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
   placeholderContainer: { alignItems: 'center', marginTop: 100 },
   placeholderText: { color: '#BDBDBD', marginTop: 15, fontSize: 16, fontWeight: '600' }
 });

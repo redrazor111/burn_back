@@ -7,6 +7,7 @@ import {
   Animated,
   Easing,
   Keyboard,
+  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -29,7 +30,6 @@ import PremiumModal from '../../components/PremiumModal';
 import ScanHistory from '../../components/ScanHistory';
 import Scanner from '../../components/Scanner';
 import Shop from '../../components/Shop';
-import StatusCard from '../../components/StatusCard';
 import { analyzeImageWithGemini } from '../../utils/geminiService';
 import { useSubscriptionStatus } from '../../utils/subscription';
 
@@ -40,31 +40,24 @@ const Tab = createMaterialTopTabNavigator();
 const TARGET_CALORIE_KEY = '@daily_target_calories';
 const CURRENT_DAY_SCANS_KEY = '@current_day_scans';
 const CURRENT_DAY_ACTIVITIES_KEY = '@current_day_activities';
-const CURRENT_DAY_WATER_KEY = '@current_day_water'; // NEW
+const CURRENT_DAY_WATER_KEY = '@current_day_water';
 const LAST_SAVED_DATE_KEY = '@last_saved_date';
 const USER_GENDER_KEY = '@user_gender';
 const USER_AGE_KEY = '@user_age';
 const USER_WEIGHT_KEY = '@user_weight';
 
-type IoniconsName = ComponentProps<typeof Ionicons>['name'];
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
-
-interface AnalysisState {
-  text: string;
-  status: string;
-}
+type IoniconsName = ComponentProps<typeof Ionicons>['name'];
 
 interface ScanResult {
   id: string;
   productName: string;
   calories: string;
-  activities: AnalysisState[];
-  isExpanded: boolean;
 }
 
 interface PendingResult {
   options: { name: string; calories: number }[];
-  rawActivities: any;
+  rawResult: any;
 }
 
 const ACTIVITY_TYPES: { label: string; met: number; icon: MaterialIconName }[] = [
@@ -76,27 +69,24 @@ const ACTIVITY_TYPES: { label: string; met: number; icon: MaterialIconName }[] =
   { label: "HIIT", met: 11.0, icon: "lightning-bolt" },
   { label: "Yoga", met: 2.5, icon: "yoga" },
   { label: "Rowing", met: 7.0, icon: "rowing" },
-  { label: "Jump Rope", met: 12.0, icon: "jump-rope" },
-  { label: "Hiking", met: 6.5, icon: "image-filter-hdr" },
+  { label: "Cardio", met: 8.0, icon: "heart-pulse" },
+  { label: "Other", met: 4.5, icon: "dots-horizontal" },
 ];
 
 function CameraScreen({ onRecommendationsFound }: any) {
   const insets = useSafeAreaInsets();
 
-  // Core State
   const [targetCalories, setTargetCalories] = useState('2000');
   const [gender, setGender] = useState('Male');
   const [age, setAge] = useState('25');
   const [weight, setWeight] = useState('70');
-  const [waterCups, setWaterCups] = useState(0); // NEW
+  const [waterCups, setWaterCups] = useState(0);
 
-  // Buffer States for Modals
   const [tempCalories, setTempCalories] = useState('2000');
   const [tempGender, setTempGender] = useState('Male');
   const [tempAge, setTempAge] = useState('25');
   const [tempWeight, setTempWeight] = useState('70');
 
-  // UI States
   const [isEditingTarget, setIsEditingTarget] = useState(false);
   const [isLoggingActivity, setIsLoggingActivity] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(ACTIVITY_TYPES[0]);
@@ -112,7 +102,6 @@ function CameraScreen({ onRecommendationsFound }: any) {
   const { isPro } = useSubscriptionStatus();
   const scanLineAnim = useRef(new Animated.Value(0)).current;
 
-  // 1. INITIALIZATION & DATA LOADING
   useEffect(() => {
     const initializeAppData = async () => {
       try {
@@ -137,9 +126,9 @@ function CameraScreen({ onRecommendationsFound }: any) {
             AsyncStorage.getItem(CURRENT_DAY_ACTIVITIES_KEY),
             AsyncStorage.getItem(CURRENT_DAY_WATER_KEY)
           ]);
-          if (savedScans) setScans(JSON.parse(savedScans));
-          if (savedActs) setActivities(JSON.parse(savedActs));
-          if (savedWater) setWaterCups(parseInt(savedWater, 10));
+          setScans(savedScans ? JSON.parse(savedScans) : []);
+          setActivities(savedActs ? JSON.parse(savedActs) : []);
+          setWaterCups(savedWater ? parseInt(savedWater, 10) : 0);
         } else {
           await AsyncStorage.multiRemove([CURRENT_DAY_SCANS_KEY, CURRENT_DAY_ACTIVITIES_KEY, CURRENT_DAY_WATER_KEY]);
           await AsyncStorage.setItem(LAST_SAVED_DATE_KEY, today);
@@ -147,7 +136,11 @@ function CameraScreen({ onRecommendationsFound }: any) {
           setActivities([]);
           setWaterCups(0);
         }
-      } catch (e) { console.error(e); } finally { isInitialLoadComplete.current = true; }
+      } catch (e) {
+        console.error(e);
+        setScans([]);
+        setActivities([]);
+      } finally { isInitialLoadComplete.current = true; }
 
       const { status } = await Camera.requestCameraPermissionsAsync();
       setHasPermission(status === 'granted');
@@ -155,16 +148,14 @@ function CameraScreen({ onRecommendationsFound }: any) {
     initializeAppData();
   }, []);
 
-  // Sync Daily State to Storage
   useEffect(() => {
     if (isInitialLoadComplete.current) {
-      AsyncStorage.setItem(CURRENT_DAY_SCANS_KEY, JSON.stringify(scans));
-      AsyncStorage.setItem(CURRENT_DAY_ACTIVITIES_KEY, JSON.stringify(activities));
+      AsyncStorage.setItem(CURRENT_DAY_SCANS_KEY, JSON.stringify(scans || []));
+      AsyncStorage.setItem(CURRENT_DAY_ACTIVITIES_KEY, JSON.stringify(activities || []));
       AsyncStorage.setItem(CURRENT_DAY_WATER_KEY, waterCups.toString());
     }
   }, [scans, activities, waterCups]);
 
-  // Loading Animation logic
   useEffect(() => {
     if (isLoading) {
       Animated.loop(
@@ -178,7 +169,6 @@ function CameraScreen({ onRecommendationsFound }: any) {
     }
   }, [isLoading]);
 
-  // Profile Save Logic
   const saveProfileData = async () => {
     try {
       setTargetCalories(tempCalories); setGender(tempGender); setAge(tempAge); setWeight(tempWeight);
@@ -193,9 +183,8 @@ function CameraScreen({ onRecommendationsFound }: any) {
     } catch (e) { console.error(e); }
   };
 
-  // Activity Logging Logic
   const handleAddActivity = async () => {
-    if (!isPro && activities.length >= MAX_ACTIVITIES) {
+    if (!isPro && activities?.length >= MAX_ACTIVITIES) {
       setIsLoggingActivity(false);
       setShowPremium(true);
       return;
@@ -215,7 +204,7 @@ function CameraScreen({ onRecommendationsFound }: any) {
       caloriesBurned: totalBurned
     };
 
-    const updated = [newActivity, ...activities];
+    const updated = [newActivity, ...(activities || [])];
     setActivities(updated);
 
     const existingHistory = await AsyncStorage.getItem('activity_history');
@@ -226,7 +215,7 @@ function CameraScreen({ onRecommendationsFound }: any) {
   };
 
   const deleteActivity = async (id: string) => {
-    const updated = activities.filter(a => a.id !== id);
+    const updated = (activities || []).filter(a => a.id !== id);
     setActivities(updated);
     const storedHistory = await AsyncStorage.getItem('activity_history');
     if (storedHistory) {
@@ -236,12 +225,12 @@ function CameraScreen({ onRecommendationsFound }: any) {
   };
 
   const deleteScan = async (id: string) => {
-    setScans(prev => prev.filter(s => s.id !== id));
+    setScans(prev => (prev || []).filter(s => s.id !== id));
     await removeFromHistory(id);
   };
 
   const handleOpenActivityLogger = () => {
-    if (!isPro && activities.length >= MAX_ACTIVITIES) {
+    if (!isPro && activities?.length >= MAX_ACTIVITIES) {
       setShowPremium(true);
     } else {
       setIsLoggingActivity(true);
@@ -262,7 +251,7 @@ function CameraScreen({ onRecommendationsFound }: any) {
 
       setPendingResult({
         options: data.identifiedOptions,
-        rawActivities: data
+        rawResult: data
       });
     } catch (e) { console.error(e); } finally { setIsLoading(false); }
   };
@@ -270,43 +259,23 @@ function CameraScreen({ onRecommendationsFound }: any) {
   const confirmSelection = async (option: { name: string; calories: number }) => {
     if (!pendingResult) return;
 
-    // Create the cleaned-up analysis object for history storage
-    const selectedAnalysis = {
-      ...pendingResult.rawActivities,
-      identifiedProduct: option.name,
-      calories: option.calories
-    };
-
     const newScan: ScanResult = {
       id: Date.now().toString(),
       productName: option.name,
       calories: option.calories.toString(),
-      isExpanded: false,
-      activities: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => ({
-        text: pendingResult.rawActivities[`activity${i}`]?.summary || "",
-        status: pendingResult.rawActivities[`activity${i}`]?.status || "MODERATE"
-      }))
     };
 
     setScans(prev => [newScan, ...(prev || [])]);
-
-    if (pendingResult.rawActivities.recommendations) {
-      onRecommendationsFound(pendingResult.rawActivities.recommendations);
-    }
-
-    // UPDATED: Save the specific selection to permanent history
-    await saveToHistory(option.name, selectedAnalysis);
-
+    await saveToHistory(option.name, { identifiedProduct: option.name, calories: option.calories });
     setPendingResult(null);
   };
 
-  // Water Control
   const adjustWater = (amount: number) => {
     setWaterCups(prev => Math.max(0, prev + amount));
   };
 
-  const totalConsumed = scans.reduce((sum, s) => sum + Number(s.calories), 0);
-  const totalBurned = activities.reduce((sum, a) => sum + a.caloriesBurned, 0);
+  const totalConsumed = (scans || []).reduce((sum, s) => sum + Number(s.calories), 0);
+  const totalBurned = (activities || []).reduce((sum, a) => sum + a.caloriesBurned, 0);
   const remainingCalories = Math.max(Number(targetCalories) - totalConsumed + totalBurned, 0);
   const translateY = scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 180] });
 
@@ -362,14 +331,14 @@ function CameraScreen({ onRecommendationsFound }: any) {
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.logActivityBtn, (!isPro && activities.length >= MAX_ACTIVITIES) && styles.logActivityBtnLocked]} onPress={handleOpenActivityLogger}>
-            <MaterialCommunityIcons name={(!isPro && activities.length >= MAX_ACTIVITIES) ? "lock" : "plus-circle"} size={20} color={(!isPro && activities.length >= MAX_ACTIVITIES) ? "#9E9E9E" : "#1B4D20"} />
-            <Text style={[styles.logActivityBtnText, (!isPro && activities.length >= MAX_ACTIVITIES) && { color: "#9E9E9E" }]}>
-              {(!isPro && activities.length >= MAX_ACTIVITIES) ? `Upgrade to log more` : "Log Exercise / Activity"}
+          <TouchableOpacity style={[styles.logActivityBtn, (!isPro && activities?.length >= MAX_ACTIVITIES) && styles.logActivityBtnLocked]} onPress={handleOpenActivityLogger}>
+            <MaterialCommunityIcons name={(!isPro && activities?.length >= MAX_ACTIVITIES) ? "lock" : "plus-circle"} size={20} color={(!isPro && activities?.length >= MAX_ACTIVITIES) ? "#9E9E9E" : "#1B4D20"} />
+            <Text style={[styles.logActivityBtnText, (!isPro && activities?.length >= MAX_ACTIVITIES) && { color: "#9E9E9E" }]}>
+              {(!isPro && activities?.length >= MAX_ACTIVITIES) ? `Upgrade to log more` : "Log Exercise / Activity"}
             </Text>
           </TouchableOpacity>
 
-          {activities.map((act) => (
+          {activities?.map((act) => (
             <View key={act.id} style={styles.activityItem}>
               <MaterialCommunityIcons name={act.icon as any} size={20} color="#2E7D32" />
               <View style={styles.activityInfo}><Text style={styles.activityName}>{act.type}</Text><Text style={styles.activitySubText}>{act.duration} mins</Text></View>
@@ -378,7 +347,6 @@ function CameraScreen({ onRecommendationsFound }: any) {
             </View>
           ))}
 
-          {/* NEW: WATER INTAKE TRACKER */}
           <View style={styles.waterTrackerContainer}>
             <View style={styles.waterHeader}>
               <MaterialCommunityIcons name="water" size={20} color="#2196F3" />
@@ -389,14 +357,11 @@ function CameraScreen({ onRecommendationsFound }: any) {
               <TouchableOpacity style={styles.waterBtn} onPress={() => adjustWater(-1)}>
                 <Ionicons name="remove-circle-outline" size={28} color="#9E9E9E" />
               </TouchableOpacity>
-
               <View style={styles.waterProgressTrack}>
-                {/* Visual indicator of 8 cups goal */}
                 {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                   <View key={i} style={[styles.waterDrop, waterCups >= i && styles.waterDropActive]} />
                 ))}
               </View>
-
               <TouchableOpacity style={styles.waterBtn} onPress={() => adjustWater(1)}>
                 <Ionicons name="add-circle-outline" size={28} color="#2196F3" />
               </TouchableOpacity>
@@ -404,52 +369,100 @@ function CameraScreen({ onRecommendationsFound }: any) {
           </View>
 
           <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Meals</Text></View>
-          {scans.map((item) => (
+          {scans?.map((item) => (
             <View key={item.id} style={styles.collapsibleCard}>
               <View style={styles.cardHeader}>
-                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }} onPress={() => { setScans(prev => prev.map(s => s.id === item.id ? { ...s, isExpanded: !s.isExpanded } : s)); }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                   <View style={styles.iconPlaceholder}><MaterialCommunityIcons name="food-apple" size={24} color="#1B4D20" /></View>
                   <View style={styles.headerInfo}><Text style={styles.foodTitle}>{item.productName}</Text><Text style={styles.foodCals}>{item.calories} Calories</Text></View>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => deleteScan(item.id)} style={{ padding: 10 }}><Ionicons name="trash-outline" size={20} color="#FF5252" /></TouchableOpacity>
-                <Ionicons name={item.isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#9E9E9E" />
-              </View>
-              {item.isExpanded && (
-                <View style={styles.expandedContent}>
-                  {item.activities.map((activity, index) => (
-                    <StatusCard key={index} title={ACTIVITY_TYPES[index].label} data={activity} icon={ACTIVITY_TYPES[index].icon} isParentLoading={isLoading} isLocked={index > 1 && !isPro} />
-                  ))}
                 </View>
-              )}
+                <TouchableOpacity onPress={() => deleteScan(item.id)} style={{ padding: 10 }}><Ionicons name="trash-outline" size={20} color="#FF5252" /></TouchableOpacity>
+              </View>
             </View>
           ))}
         </ScrollView>
       </View>
 
-      {/* SELECTION MODAL */}
+      {/* MODALS SECTION */}
+      {/* 1. SELECTION MODAL - FIXED FOR ANDROID */}
       {pendingResult && (
-        <View style={styles.editOverlay}>
-          <View style={styles.editBox}>
+      <Modal
+        visible={!!pendingResult}
+        transparent={true}
+        animationType="fade"
+        hardwareAccelerated={true}
+        statusBarTranslucent={true}
+        onRequestClose={() => setPendingResult(null)}
+      >
+        <View style={styles.androidOverlay}>
+          <View style={styles.androidSelectionBox}>
+
+            {/* Top Close Button */}
+            <TouchableOpacity
+              style={styles.absCloseBtn}
+              onPress={() => setPendingResult(null)}
+            >
+              <MaterialCommunityIcons name="close" size={24} color="#9E9E9E" />
+            </TouchableOpacity>
+
             <Text style={styles.editTitle}>Select Best Match</Text>
-            {pendingResult.options.map((opt, idx) => (
-              <TouchableOpacity key={idx} style={styles.optionCard} onPress={() => confirmSelection(opt)}>
-                <View><Text style={styles.optionName}>{opt.name}</Text><Text style={styles.optionCal}>{opt.calories} cal</Text></View>
-                <Ionicons name="add-circle" size={26} color="#1B4D20" />
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn, { width: '100%', marginTop: 10 }]} onPress={() => setPendingResult(null)}><Text>Cancel</Text></TouchableOpacity>
+            <Text style={{ textAlign: 'center', color: '#666', marginBottom: 15, fontSize: 14 }}>
+              Choose the option that best matches your meal.
+            </Text>
+
+            <View style={{ flexShrink: 1, marginBottom: 10 }}>
+              <ScrollView
+                showsVerticalScrollIndicator={true}
+                nestedScrollEnabled={true}
+                // Prevents the background tab navigator from swiping
+                onStartShouldSetResponderCapture={() => true}
+              >
+                {pendingResult?.options?.map((opt, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.optionCard}
+                    onPress={() => confirmSelection(opt)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.optionName}>{opt.name}</Text>
+                      <Text style={styles.optionCal}>{opt.calories} cal</Text>
+                    </View>
+                    <Ionicons name="add-circle" size={26} color="#1B4D20" />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setPendingResult(null)}
+            >
+              <Text style={styles.closeText}>Cancel Scan</Text>
+            </TouchableOpacity>
+
           </View>
         </View>
+      </Modal>
       )}
 
-      {/* ACTIVITY MODAL */}
+      {/* 2. ACTIVITY LOGGING MODAL */}
       {isLoggingActivity && (
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>
             <Text style={styles.editTitle}>Log Exercise</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activitySelector}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.activitySelector}
+              onStartShouldSetResponderCapture={() => true}
+              onTouchEnd={(e) => e.stopPropagation()}
+            >
               {ACTIVITY_TYPES.map((act) => (
-                <TouchableOpacity key={act.label} style={[styles.activityTypeBtn, selectedActivity.label === act.label && styles.activityTypeBtnActive]} onPress={() => setSelectedActivity(act)}>
+                <TouchableOpacity
+                  key={act.label}
+                  style={[styles.activityTypeBtn, selectedActivity.label === act.label && styles.activityTypeBtnActive]}
+                  onPress={() => setSelectedActivity(act)}
+                >
                   <MaterialCommunityIcons name={act.icon as any} size={24} color={selectedActivity.label === act.label ? "#FFF" : "#1B4D20"} />
                   <Text style={[styles.activityTypeLabel, selectedActivity.label === act.label && styles.activityTypeLabelActive]}>{act.label}</Text>
                 </TouchableOpacity>
@@ -464,21 +477,43 @@ function CameraScreen({ onRecommendationsFound }: any) {
         </View>
       )}
 
+      {/* 3. PROFILE MODAL */}
       {/* PROFILE MODAL */}
       {isEditingTarget && (
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>
             <Text style={styles.editTitle}>Edit Profile</Text>
-            <View style={styles.inputGroup}><Text style={styles.inputLabel}>Calorie Goal</Text><TextInput style={styles.editInputSmall} value={tempCalories} onChangeText={setTempCalories} keyboardType="numeric" /></View>
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}><Text style={styles.inputLabel}>Gender</Text>
-                <View style={styles.genderPicker}>{['Male', 'Female'].map(g => (
-                  <TouchableOpacity key={g} onPress={() => setTempGender(g)} style={[styles.genderBtn, tempGender === g && styles.genderBtnActive]}><Text style={tempGender === g ? { color: '#1B4D20' } : { color: '#999' }}>{g}</Text></TouchableOpacity>
-                ))}</View>
-              </View>
-              <View style={{ width: 50, marginRight: 10 }}><Text style={styles.inputLabel}>Age</Text><TextInput style={styles.editInputSmall} value={tempAge} onChangeText={setTempAge} keyboardType="numeric" /></View>
-              <View style={{ width: 60 }}><Text style={styles.inputLabel}>Weight</Text><TextInput style={styles.editInputSmall} value={tempWeight} onChangeText={setTempWeight} keyboardType="numeric" /></View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Calorie Goal</Text>
+              <TextInput style={styles.editInputSmall} value={tempCalories} onChangeText={setTempCalories} keyboardType="numeric" />
             </View>
+
+            <View style={styles.row}>
+              {/* Gender - Takes up half the row */}
+              <View style={[styles.inputGroup, { flex: 2, marginRight: 8 }]}>
+                <Text style={styles.inputLabel}>Gender</Text>
+                <View style={styles.genderPicker}>
+                  {['Male', 'Female'].map(g => (
+                    <TouchableOpacity key={g} onPress={() => setTempGender(g)} style={[styles.genderBtn, tempGender === g && styles.genderBtnActive]}>
+                      <Text style={{ fontSize: 12, color: tempGender === g ? '#1B4D20' : '#999' }}>{g}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Age - Flexible */}
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.inputLabel} numberOfLines={1}>Age</Text>
+                <TextInput style={styles.editInputSmall} value={tempAge} onChangeText={setTempAge} keyboardType="numeric" />
+              </View>
+
+              {/* Weight - Flexible */}
+              <View style={[styles.inputGroup, { flex: 1.2 }]}>
+                <Text style={styles.inputLabel} numberOfLines={1}>Wt (kg)</Text>
+                <TextInput style={styles.editInputSmall} value={tempWeight} onChangeText={setTempWeight} keyboardType="numeric" />
+              </View>
+            </View>
+
             <View style={styles.editActions}>
               <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsEditingTarget(false)}><Text>Cancel</Text></TouchableOpacity>
               <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={saveProfileData}><Text style={{ color: '#fff' }}>Save</Text></TouchableOpacity>
@@ -492,6 +527,7 @@ function CameraScreen({ onRecommendationsFound }: any) {
   );
 }
 
+// NAVIGATION COMPONENT
 function AppContent() {
   const insets = useSafeAreaInsets();
   const [recommendations, setRecommendations] = useState<string[]>([]);
@@ -545,8 +581,6 @@ const styles = StyleSheet.create({
   activityName: { fontSize: 14, fontWeight: '800' },
   activitySubText: { fontSize: 11, color: '#9E9E9E', fontWeight: '600' },
   activityBurn: { fontSize: 15, fontWeight: '900', color: '#2E7D32', marginRight: 10 },
-
-  // NEW WATER STYLES
   waterTrackerContainer: { backgroundColor: '#FFF', borderRadius: 20, padding: 15, marginTop: 15, borderWidth: 1, borderColor: '#F2F2F2' },
   waterHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   waterTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: '#1A1A1A', marginLeft: 8 },
@@ -556,7 +590,6 @@ const styles = StyleSheet.create({
   waterProgressTrack: { flexDirection: 'row', flex: 1, justifyContent: 'center', marginHorizontal: 10 },
   waterDrop: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#E3F2FD', marginHorizontal: 4 },
   waterDropActive: { backgroundColor: '#2196F3' },
-
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 25, marginBottom: 10 },
   sectionTitle: { fontSize: 12, fontWeight: '800', color: '#BDBDBD', textTransform: 'uppercase', letterSpacing: 1.2 },
   collapsibleCard: { backgroundColor: '#FFF', borderRadius: 20, marginBottom: 12, borderWidth: 1, borderColor: '#F2F2F2' },
@@ -565,23 +598,14 @@ const styles = StyleSheet.create({
   headerInfo: { flex: 1, marginLeft: 12 },
   foodTitle: { fontSize: 16, fontWeight: '800' },
   foodCals: { fontSize: 13, color: '#2E7D32', fontWeight: '700' },
-  expandedContent: { padding: 12, borderTopWidth: 1, borderTopColor: '#F0F0F0' },
   editOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
-  editBox: { backgroundColor: '#FFF', width: '90%', padding: 20, borderRadius: 25 },
   editTitle: { fontSize: 18, fontWeight: '900', marginBottom: 15, textAlign: 'center' },
-  inputGroup: { marginBottom: 15 },
-  inputLabel: { fontSize: 11, fontWeight: '800', color: '#999', marginBottom: 5 },
-  editInputSmall: { backgroundColor: '#F5F5F5', padding: 10, borderRadius: 10, fontSize: 16, fontWeight: '700' },
   genderPicker: { flexDirection: 'row', backgroundColor: '#F5F5F5', borderRadius: 10, padding: 3 },
   genderBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8 },
   genderBtnActive: { backgroundColor: '#FFF' },
   editActions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
   modalBtn: { flex: 0.48, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
-  cancelBtn: { backgroundColor: '#F5F5F5' },
   saveBtn: { backgroundColor: '#1B4D20' },
-  optionCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F9F9F9', padding: 15, borderRadius: 18, marginBottom: 10, borderWidth: 1, borderColor: '#EEE' },
-  optionName: { fontSize: 16, fontWeight: '800' },
-  optionCal: { fontSize: 14, color: '#2E7D32', fontWeight: '700' },
   activitySelector: { flexDirection: 'row', marginBottom: 20 },
   activityTypeBtn: { alignItems: 'center', padding: 15, borderRadius: 18, backgroundColor: '#F5F5F5', marginRight: 10, width: 90 },
   activityTypeBtnActive: { backgroundColor: '#1B4D20' },
@@ -597,9 +621,117 @@ const styles = StyleSheet.create({
   bottomLeft: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
   bottomRight: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
   scanLine: { height: 2, backgroundColor: '#4CAF50', width: '100%' },
-  row: {
+  absCloseBtn: {
+    position: 'absolute',
+    top: 15,
+    right: 15,
+    zIndex: 10,
+    padding: 5
+  },
+  closeBtn: { marginTop: 20 },
+  editBox: {
+    backgroundColor: '#FFF',
+    width: '92%',
+    padding: 25,
+    borderRadius: 25,
+    position: 'relative',
+    elevation: 20,
+  },
+  optionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between'
+    justifyContent: 'space-between',
+    backgroundColor: '#F5F5F5',
+    padding: 16,
+    borderRadius: 15,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E0E0E0'
+  },
+  optionName: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1A1A1A'
+  },
+  optionCal: {
+    fontSize: 14,
+    color: '#2E7D32',
+    fontWeight: '700',
+    marginTop: 2
+  },
+  closeText: {
+    color: '#9E9E9E',
+    fontWeight: '800',
+    textAlign: 'center'
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-end', // Aligns bottom of inputs
+    justifyContent: 'space-between',
+    width: '100%'
+  },
+  inputGroup: {
+    marginBottom: 15
+  },
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#999',
+    marginBottom: 5,
+    textTransform: 'uppercase'
+  },
+  editInputSmall: {
+    backgroundColor: '#F5F5F5',
+    padding: 10,
+    borderRadius: 10,
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center'
+  },
+  selectionFooter: {
+    paddingTop: 10,
+  },
+
+  cancelBtn: {
+    backgroundColor: '#F5F5F5',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    width: '100%',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  selectionBox: {
+    backgroundColor: '#FFF',
+    width: '92%',
+    maxHeight: '85%',
+    borderRadius: 25,
+    padding: 25,
+    elevation: 10,
+  },
+
+  selectionScroll: {
+    flex: 1,
+    marginBottom: 15,
+  },
+  androidOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  androidSelectionBox: {
+    width: '94%',
+    maxHeight: '90%',
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 20,
+    elevation: 50, // 🔥 important for Android
   },
 });
