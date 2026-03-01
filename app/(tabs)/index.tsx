@@ -98,6 +98,10 @@ function CameraScreen({ onRecommendationsFound }: any) {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [showPremium, setShowPremium] = useState(false);
 
+  const [isEditingSelection, setIsEditingSelection] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editCals, setEditCals] = useState('');
+
   const isInitialLoadComplete = useRef(false);
   const { isPro } = useSubscriptionStatus();
   const scanLineAnim = useRef(new Animated.Value(0)).current;
@@ -268,6 +272,13 @@ function CameraScreen({ onRecommendationsFound }: any) {
     setScans(prev => [newScan, ...(prev || [])]);
     await saveToHistory(option.name, { identifiedProduct: option.name, calories: option.calories });
     setPendingResult(null);
+    setIsEditingSelection(false);
+  };
+
+  const startEditingOption = (opt: { name: string; calories: number }) => {
+    setEditName(opt.name);
+    setEditCals(opt.calories.toString());
+    setIsEditingSelection(true);
   };
 
   const adjustWater = (amount: number) => {
@@ -386,63 +397,58 @@ function CameraScreen({ onRecommendationsFound }: any) {
       {/* MODALS SECTION */}
       {/* 1. SELECTION MODAL - FIXED FOR ANDROID */}
       {pendingResult && (
-      <Modal
-        visible={!!pendingResult}
-        transparent={true}
-        animationType="fade"
-        hardwareAccelerated={true}
-        statusBarTranslucent={true}
-        onRequestClose={() => setPendingResult(null)}
-      >
-        <View style={styles.androidOverlay}>
-          <View style={styles.androidSelectionBox}>
+        <Modal visible={!!pendingResult} transparent animationType="fade" statusBarTranslucent onRequestClose={() => { setPendingResult(null); setIsEditingSelection(false); }}>
+          <View style={styles.androidOverlay}>
+            <View style={styles.androidSelectionBox}>
+              <TouchableOpacity style={styles.absCloseBtn} onPress={() => { setPendingResult(null); setIsEditingSelection(false); }}>
+                <MaterialCommunityIcons name="close" size={24} color="#9E9E9E" />
+              </TouchableOpacity>
 
-            {/* Top Close Button */}
-            <TouchableOpacity
-              style={styles.absCloseBtn}
-              onPress={() => setPendingResult(null)}
-            >
-              <MaterialCommunityIcons name="close" size={24} color="#9E9E9E" />
-            </TouchableOpacity>
+              <Text style={styles.editTitle}>{isEditingSelection ? "Adjust Details" : "Select Best Match"}</Text>
 
-            <Text style={styles.editTitle}>Select Best Match</Text>
-            <Text style={{ textAlign: 'center', color: '#666', marginBottom: 15, fontSize: 14 }}>
-              Choose the option that best matches your meal.
-            </Text>
-
-            <View style={{ flexShrink: 1, marginBottom: 10 }}>
-              <ScrollView
-                showsVerticalScrollIndicator={true}
-                nestedScrollEnabled={true}
-                // Prevents the background tab navigator from swiping
-                onStartShouldSetResponderCapture={() => true}
-              >
-                {pendingResult?.options?.map((opt, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={styles.optionCard}
-                    onPress={() => confirmSelection(opt)}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.optionName}>{opt.name}</Text>
-                      <Text style={styles.optionCal}>{opt.calories} cal</Text>
-                    </View>
-                    <Ionicons name="add-circle" size={26} color="#1B4D20" />
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              {isEditingSelection ? (
+                <View style={{ width: '100%', padding: 10 }}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Food Name</Text>
+                    <TextInput style={[styles.editInputSmall, { textAlign: 'left' }]} value={editName} onChangeText={setEditName} />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Calories</Text>
+                    <TextInput style={styles.editInputSmall} value={editCals} onChangeText={setEditCals} keyboardType="numeric" />
+                  </View>
+                  <View style={styles.editActions}>
+                    <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsEditingSelection(false)}><Text>Back</Text></TouchableOpacity>
+                    <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={() => confirmSelection({ name: editName, calories: parseInt(editCals) || 0 })}><Text style={{ color: '#fff' }}>Add Meal</Text></TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <View style={{ flexShrink: 1, marginBottom: 10 }}>
+                    <ScrollView showsVerticalScrollIndicator onStartShouldSetResponderCapture={() => true}>
+                      {pendingResult?.options?.map((opt, idx) => (
+                        <View key={idx} style={styles.optionCard}>
+                          <TouchableOpacity style={{ flex: 1 }} onPress={() => confirmSelection(opt)}>
+                            <Text style={styles.optionName}>{opt.name}</Text>
+                            <Text style={styles.optionCal}>{opt.calories} cal</Text>
+                          </TouchableOpacity>
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <TouchableOpacity onPress={() => startEditingOption(opt)} style={{ padding: 8 }}>
+                              <Ionicons name="pencil" size={20} color="#9E9E9E" />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => confirmSelection(opt)} style={{ padding: 8 }}>
+                              <Ionicons name="add-circle" size={28} color="#1B4D20" />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  </View>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setPendingResult(null)}><Text style={styles.closeText}>Cancel Scan</Text></TouchableOpacity>
+                </>
+              )}
             </View>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setPendingResult(null)}
-            >
-              <Text style={styles.closeText}>Cancel Scan</Text>
-            </TouchableOpacity>
-
           </View>
-        </View>
-      </Modal>
+        </Modal>
       )}
 
       {/* 2. ACTIVITY LOGGING MODAL */}
