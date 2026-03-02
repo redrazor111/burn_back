@@ -42,7 +42,8 @@
         {
           "permissions": [
             "ActiveCaloriesBurned"
-          ]
+          ],
+          "permissionsRationaleActivity": ".MainActivity"
         }
       ],
       [

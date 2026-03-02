@@ -4,6 +4,7 @@ import { Camera } from 'expo-camera';
 import React, { ComponentProps, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   Keyboard,
@@ -245,7 +246,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     setIsLoggingActivity(false);
   };
 
-const handleManualFoodLog = async () => {
+  const handleManualFoodLog = async () => {
     if (!isPro && scans?.length >= MAX_SEARCHES) {
       setIsLoggingFood(false); setShowPremium(true); return;
     }
@@ -273,7 +274,7 @@ const handleManualFoodLog = async () => {
     setManualFoodCals('');
   };
 
-const deleteActivity = async (id: string) => {
+  const deleteActivity = async (id: string) => {
     const updatedActivities = activities.filter(a => a.id !== id);
     setActivities(updatedActivities);
 
@@ -305,7 +306,46 @@ const deleteActivity = async (id: string) => {
     else setIsLoggingFood(true);
   };
 
-const confirmSelection = async (option: { name: string; calories: number }) => {
+  const handleGoogleFitSync = async () => {
+    if (isSyncingWatch) return;
+    setIsSyncingWatch(true);
+    try {
+      const watchCalories = await syncAndroidCalories();
+      if (watchCalories > 0) {
+        const todayStr = new Date().toDateString();
+        const syncId = `watch-${todayStr}`;
+        const watchEntry = {
+          id: syncId,
+          date: new Date().toISOString(),
+          type: 'Google Fit Sync',
+          icon: 'google-fit',
+          duration: 0,
+          caloriesBurned: watchCalories
+        };
+
+        // Update local and storage
+        const updatedActivities = [watchEntry, ...activities.filter(a => a.id !== syncId)];
+        setActivities(updatedActivities);
+        await AsyncStorage.setItem(CURRENT_DAY_ACTIVITIES_KEY, JSON.stringify(updatedActivities));
+
+        // Update Global History
+        const existingHistory = await AsyncStorage.getItem('activity_history');
+        let historyData = existingHistory ? JSON.parse(existingHistory) : [];
+        historyData = [watchEntry, ...historyData.filter((a: any) => a.id !== syncId)].slice(0, 500);
+        await AsyncStorage.setItem('activity_history', JSON.stringify(historyData));
+
+        Alert.alert("Sync Complete", `Imported ${watchCalories} calories from Google Fit.`);
+      } else {
+        Alert.alert("Sync", "No new active calories found for today in Google Fit.");
+      }
+    } catch (e) {
+      console.error("Manual sync failed", e);
+    } finally {
+      setIsSyncingWatch(false);
+    }
+  };
+
+  const confirmSelection = async (option: { name: string; calories: number }) => {
     if (!pendingResult) return;
 
     const uniqueId = Date.now().toString();
@@ -426,12 +466,30 @@ const confirmSelection = async (option: { name: string; calories: number }) => {
           ))}
 
           {/* 4. Activities Section */}
-          <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Activities</Text></View>
-          <TouchableOpacity style={[styles.logActivityBtn, (!isPro && activities?.length >= MAX_ACTIVITIES) && styles.logActivityBtnLocked]} onPress={handleOpenActivityLogger}>
-            <MaterialCommunityIcons name={(!isPro && activities?.length >= MAX_ACTIVITIES) ? "lock" : "plus-circle"} size={20} color={(!isPro && activities?.length >= MAX_ACTIVITIES) ? "#9E9E9E" : "#1B4D20"} />
-            <Text style={styles.logActivityBtnText}>
-              {(!isPro && activities?.length >= MAX_ACTIVITIES) ? `Upgrade to log more` : "Log Exercise/Activity"}
-            </Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Today's Activities</Text>
+            {/* <TouchableOpacity onPress={handleGoogleFitSync} style={styles.manualSyncHeaderBtn}>
+              {isSyncingWatch ? <ActivityIndicator size="small" color="#2196F3" /> : <MaterialCommunityIcons name="sync" size={18} color="#2196F3" />}
+            </TouchableOpacity> */}
+          </View>
+
+          {/* Sync Google Fit Button (Visible if no watch sync yet) */}
+          {/* {activities.filter(a => a.id.toString().includes('watch')).length === 0 && (
+            <TouchableOpacity
+              style={styles.googleFitBtn}
+              onPress={handleGoogleFitSync}
+              disabled={isSyncingWatch}
+            >
+              <MaterialCommunityIcons name="google-fit" size={22} color="#FFF" />
+              <Text style={styles.googleFitBtnText}>
+                {isSyncingWatch ? "Syncing..." : "Sync Google Fit Calories"}
+              </Text>
+            </TouchableOpacity>
+          )} */}
+
+          <TouchableOpacity style={styles.logActivityBtn} onPress={handleOpenActivityLogger}>
+            <MaterialCommunityIcons name="plus-circle" size={20} color="#1B4D20" />
+            <Text style={styles.logActivityBtnText}>Log Exercise/Activity</Text>
           </TouchableOpacity>
 
           {activities?.map((act) => (
@@ -550,9 +608,9 @@ function AppContent() {
   // FIX: Add Record<string, string> or Record<string, any>
   const iconMap: Record<string, any> = {
     Today: 'calendar-outline',
-    Camera: 'camera-outline',
+    Scan: 'camera-outline',
     Meals: 'fast-food-outline',
-    Exercise: 'fitness-outline',
+    Cardio: 'fitness-outline',
     Guide: 'book-outline',
     Shop: 'cart-outline'
   };
@@ -579,9 +637,9 @@ function AppContent() {
         })}
       >
         <Tab.Screen name="Today">{() => <SummaryScreen />}</Tab.Screen>
-        <Tab.Screen name="Camera">{() => <CameraScreen />}</Tab.Screen>
+        <Tab.Screen name="Scan">{() => <CameraScreen />}</Tab.Screen>
         <Tab.Screen name="Meals">{() => <ScanHistory />}</Tab.Screen>
-        <Tab.Screen name="Exercise">{() => <ActivityHistory />}</Tab.Screen>
+        <Tab.Screen name="Cardio">{() => <ActivityHistory />}</Tab.Screen>
         <Tab.Screen name="Guide">{() => <Guide />}</Tab.Screen>
         <Tab.Screen name="Shop">{() => <Shop />}</Tab.Screen>
       </Tab.Navigator>
@@ -675,4 +733,25 @@ const styles = StyleSheet.create({
   androidOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   androidSelectionBox: { width: '94%', maxHeight: '90%', backgroundColor: '#FFF', borderRadius: 20, padding: 20, elevation: 50 },
   unitSmall: { fontSize: 8, fontWeight: '700', color: '#9E9E9E' },
+  googleFitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4285F4', // Google Blue
+    paddingVertical: 14,
+    borderRadius: 15,
+    marginBottom: 10,
+    elevation: 2,
+  },
+  googleFitBtnText: {
+    color: '#FFF',
+    fontWeight: '800',
+    marginLeft: 10,
+    fontSize: 14,
+  },
+  manualSyncHeaderBtn: {
+    padding: 5,
+    borderRadius: 20,
+    backgroundColor: '#E3F2FD',
+  },
 });
