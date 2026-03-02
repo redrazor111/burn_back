@@ -178,6 +178,17 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   useFocusEffect(React.useCallback(() => { if (isInitialLoadComplete.current) syncWatchData(); }, []));
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadFreshData = async () => {
+        const savedScans = await AsyncStorage.getItem('@current_day_scans');
+        if (savedScans) {
+          setScans(JSON.parse(savedScans));
+        }
+      };
+      loadFreshData();
+    }, [])
+  );
 
   useEffect(() => {
     if (isInitialLoadComplete.current) {
@@ -254,8 +265,12 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     setManualFoodCals('');
   };
 
-  const deleteActivity = async (id: string) => {
-    setActivities(prev => prev.filter(a => a.id !== id));
+const deleteActivity = async (id: string) => {
+    const updatedActivities = activities.filter(a => a.id !== id);
+    setActivities(updatedActivities);
+
+    await AsyncStorage.setItem(CURRENT_DAY_ACTIVITIES_KEY, JSON.stringify(updatedActivities));
+
     const storedHistory = await AsyncStorage.getItem('activity_history');
     if (storedHistory) {
       const filtered = JSON.parse(storedHistory).filter((i: any) => i.id !== id);
@@ -264,7 +279,11 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   const deleteScan = async (id: string) => {
-    setScans(prev => prev.filter(s => s.id !== id));
+    // 1. Update local state
+    const updatedScans = scans.filter(s => s.id !== id);
+    setScans(updatedScans);
+
+    await AsyncStorage.setItem(CURRENT_DAY_SCANS_KEY, JSON.stringify(updatedScans));
     await removeFromHistory(id);
   };
 
