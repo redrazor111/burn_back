@@ -81,7 +81,7 @@ export default function PremiumModal({ visible, onClose }) {
             {[
               "Unlimited Scans",
               "Unlimited Activities",
-              "Detail Extra Activities"
+              "Sync to Health Apps"
             ].map((feature, index) => (
               <View key={index} style={styles.featureItem}>
                 <MaterialCommunityIcons name="check-circle" size={18} color="#2E7D32" />

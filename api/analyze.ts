@@ -30,7 +30,7 @@ export default async function handler(req: any, res: any) {
     const prompt = `
     INSTRUCTIONS:
     1. Analyze the food in the image.
-    2. Provide FIVE (5) distinct possible interpretations of this meal.
+    2. Provide THREE (3) distinct possible interpretations of this meal.
     3. Include variations in preparation, portion size, or specific ingredients (e.g., 'Grilled Chicken Breast - 200g', 'Fried Chicken Thighs', 'Chicken Salad no dressing', etc.)
     4. For each, provide a realistic estimated calorie count.
 
@@ -39,9 +39,7 @@ export default async function handler(req: any, res: any) {
       "identifiedOptions": [
         {"name": "Option 1", "calories": 0},
         {"name": "Option 2", "calories": 0},
-        {"name": "Option 3", "calories": 0},
-        {"name": "Option 4", "calories": 0},
-        {"name": "Option 5", "calories": 0}
+        {"name": "Option 3", "calories": 0}
       ]
     }
     `;
