@@ -1,9 +1,9 @@
+
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   LayoutAnimation,
   Platform,
   ScrollView,
@@ -14,7 +14,6 @@ import {
   View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { clearAllHistory } from '../utils/historyStorage';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -35,6 +34,8 @@ export default function ScanHistory() {
         if (storedScans) {
           const parsed = JSON.parse(storedScans);
           const historyData = Array.isArray(parsed) ? parsed : [];
+
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
           setHistory(historyData);
 
           // Default sections to collapsed
@@ -62,7 +63,8 @@ export default function ScanHistory() {
       const key = getSafeDateKey(item.date);
       if (!groups[key]) groups[key] = { items: [], totalCalories: 0 };
       groups[key].items.push(item);
-      groups[key].totalCalories += Number(item.analysis?.calories || 0);
+      // Fixed: mapping to the flattened structure from saveToHistory
+      groups[key].totalCalories += Number(item.calories || 0);
     });
     return groups;
   }, [history]);
@@ -85,33 +87,13 @@ export default function ScanHistory() {
     return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
   };
 
-  const handleDeleteAll = () => {
-    Alert.alert(
-      "Clear Meals History",
-      "This will permanently erase all past meal records.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete All", style: "destructive", onPress: async () => {
-            await clearAllHistory();
-            setHistory([]);
-        }}
-      ]
-    );
-  };
-
   return (
     <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
-          <Text style={styles.title}>Meals History</Text>
-          {history.length > 0 && (
-            <TouchableOpacity onPress={handleDeleteAll} style={styles.deleteAllBtn}>
-              <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF5252" />
-              <Text style={styles.deleteAllText}>Clear</Text>
-            </TouchableOpacity>
-          )}
+          <Text style={styles.title}>Meal History</Text>
         </View>
-        <Text style={styles.subtitle}>Tracked meals and calories</Text>
+        <Text style={styles.subtitle}>Tracks Meals and Calories Intake</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContentList} showsVerticalScrollIndicator={false}>
@@ -150,11 +132,11 @@ export default function ScanHistory() {
                             return `${h}:${m} ${ampm}`;
                           })()}
                         </Text>
-                        <Text style={styles.historyFoodName}>{item.analysis?.identifiedProduct || "Unknown Item"}</Text>
+                        <Text style={styles.historyFoodName}>{item.identifiedProduct || "Unknown Item"}</Text>
                       </View>
 
                       <View style={styles.calorieBadge}>
-                        <Text style={styles.calorieText}>{item.analysis?.calories || 0} cal</Text>
+                        <Text style={styles.calorieText}>{item.calories || 0} cal</Text>
                       </View>
                     </View>
                   ))}

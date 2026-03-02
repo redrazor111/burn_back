@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    View
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -30,7 +30,7 @@ export default function GuideScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Calorie Guide</Text>
-        <Text style={styles.subtitle}>Recommended daily intake for maintenance</Text>
+        <Text style={styles.subtitle}>Recommended daily intake</Text>
       </View>
       <ScrollView contentContainerStyle={styles.scrollPadding} showsVerticalScrollIndicator={false}>
         <GuideSection

@@ -245,21 +245,29 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     setIsLoggingActivity(false);
   };
 
-  const handleManualFoodLog = async () => {
+const handleManualFoodLog = async () => {
     if (!isPro && scans?.length >= MAX_SEARCHES) {
       setIsLoggingFood(false); setShowPremium(true); return;
     }
     const cals = parseInt(manualFoodCals);
     if (!manualFoodName || isNaN(cals)) return;
 
+    const uniqueId = Date.now().toString();
+
     const newScan: ScanResult = {
-      id: Date.now().toString(),
+      id: uniqueId,
       productName: manualFoodName,
       calories: cals.toString(),
     };
 
     setScans(prev => [newScan, ...(prev || [])]);
-    await saveToHistory(manualFoodName, { identifiedProduct: manualFoodName, calories: cals });
+
+    await saveToHistory(manualFoodName, {
+      id: uniqueId,
+      identifiedProduct: manualFoodName,
+      calories: cals
+    });
+
     setIsLoggingFood(false);
     setManualFoodName('');
     setManualFoodCals('');
@@ -297,15 +305,25 @@ const deleteActivity = async (id: string) => {
     else setIsLoggingFood(true);
   };
 
-  const confirmSelection = async (option: { name: string; calories: number }) => {
+const confirmSelection = async (option: { name: string; calories: number }) => {
     if (!pendingResult) return;
+
+    const uniqueId = Date.now().toString();
+
     const newScan: ScanResult = {
-      id: Date.now().toString(),
+      id: uniqueId, // Use the shared ID
       productName: option.name,
       calories: option.calories.toString(),
     };
+
     setScans(prev => [newScan, ...(prev || [])]);
-    await saveToHistory(option.name, { identifiedProduct: option.name, calories: option.calories });
+
+    await saveToHistory(option.name, {
+      id: uniqueId, // Pass ID here
+      identifiedProduct: option.name,
+      calories: option.calories
+    });
+
     setPendingResult(null);
     setIsEditingSelection(false);
   };
@@ -328,7 +346,7 @@ const deleteActivity = async (id: string) => {
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <View>
-            <Text style={styles.title}>Todays Dashboard</Text>
+            <Text style={styles.title}>Daily Dashboard</Text>
             <Text style={styles.subtitle}>{age}yr {gender} • {weight}kg Profile Active</Text>
           </View>
           {isSyncingWatch && (
@@ -387,7 +405,7 @@ const deleteActivity = async (id: string) => {
           </View>
 
           {/* 3. Meals Section */}
-          <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Meals/Drink</Text></View>
+          <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Meals/Drinks</Text></View>
           <TouchableOpacity style={[styles.logActivityBtn, (!isPro && scans?.length >= MAX_SEARCHES) && styles.logActivityBtnLocked, { marginTop: 0, marginBottom: 15 }]} onPress={handleOpenFoodLogger}>
             <MaterialCommunityIcons name={(!isPro && scans?.length >= MAX_SEARCHES) ? "lock" : "plus-circle"} size={20} color={(!isPro && scans?.length >= MAX_SEARCHES) ? "#9E9E9E" : "#1B4D20"} />
             <Text style={styles.logActivityBtnText}>
@@ -534,7 +552,7 @@ function AppContent() {
     Today: 'calendar-outline',
     Camera: 'camera-outline',
     Meals: 'fast-food-outline',
-    Activities: 'fitness-outline',
+    Exercise: 'fitness-outline',
     Guide: 'book-outline',
     Shop: 'cart-outline'
   };
@@ -563,7 +581,7 @@ function AppContent() {
         <Tab.Screen name="Today">{() => <SummaryScreen />}</Tab.Screen>
         <Tab.Screen name="Camera">{() => <CameraScreen />}</Tab.Screen>
         <Tab.Screen name="Meals">{() => <ScanHistory />}</Tab.Screen>
-        <Tab.Screen name="Activities">{() => <ActivityHistory />}</Tab.Screen>
+        <Tab.Screen name="Exercise">{() => <ActivityHistory />}</Tab.Screen>
         <Tab.Screen name="Guide">{() => <Guide />}</Tab.Screen>
         <Tab.Screen name="Shop">{() => <Shop />}</Tab.Screen>
       </Tab.Navigator>

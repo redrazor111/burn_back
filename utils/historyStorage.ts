@@ -2,6 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const HISTORY_KEY = 'scan_history';
 
+interface ScanHistoryData {
+  id: string;
+  identifiedProduct: string;
+  calories: number;
+  date?: string;
+}
+
 export const removeFromHistory = async (id: string) => {
   try {
     const existing = await AsyncStorage.getItem(HISTORY_KEY);
@@ -14,28 +21,15 @@ export const removeFromHistory = async (id: string) => {
   }
 };
 
-export const clearAllHistory = async () => {
-  try {
-    await AsyncStorage.removeItem(HISTORY_KEY);
-  } catch (e) {
-    console.error("Error clearing history storage:", e);
-  }
-};
+export const saveToHistory = async (name: string, data: ScanHistoryData) => {
+  const existing = await AsyncStorage.getItem('scan_history');
+  const history = existing ? JSON.parse(existing) : [];
 
-export const saveToHistory = async (name: string, analysis: any) => {
-  try {
-    const SCAN_HISTORY_KEY = 'scan_history';
-    const existingHistory = await AsyncStorage.getItem(SCAN_HISTORY_KEY);
-    const history = existingHistory ? JSON.parse(existingHistory) : [];
+  const newEntry = {
+    ...data,
+    id: data.id || Date.now().toString(), // Use passed ID or fallback
+    date: new Date().toISOString(),
+  };
 
-    const newEntry = {
-      id: Date.now().toString(),
-      date: new Date().toISOString(),
-      analysis: analysis // This now contains the correctly selected name/calories
-    };
-
-    await AsyncStorage.setItem(SCAN_HISTORY_KEY, JSON.stringify([newEntry, ...history].slice(0, 500)));
-  } catch (e) {
-    console.error("Failed to save scan history", e);
-  }
+  await AsyncStorage.setItem('scan_history', JSON.stringify([newEntry, ...history]));
 };

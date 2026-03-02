@@ -4,7 +4,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-    Alert,
     LayoutAnimation,
     Platform,
     ScrollView,
@@ -34,6 +33,8 @@ export default function ActivityHistory() {
                 const actStored = await AsyncStorage.getItem(ACTIVITY_HISTORY_KEY);
                 const actData = actStored ? JSON.parse(actStored) : [];
 
+                // Smoothly animate the appearance of history
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                 setHistory(actData);
 
                 // Default sections to collapsed
@@ -83,37 +84,13 @@ export default function ActivityHistory() {
         return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
     };
 
-    const handleDeleteAll = () => {
-        Alert.alert(
-            "Clear Activity History",
-            "This will permanently erase all past exercise records.",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Delete All",
-                    style: "destructive",
-                    onPress: async () => {
-                        await AsyncStorage.removeItem(ACTIVITY_HISTORY_KEY);
-                        setHistory([]);
-                    }
-                }
-            ]
-        );
-    };
-
     return (
         <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
             <View style={styles.header}>
                 <View style={styles.headerTopRow}>
-                    <Text style={styles.title}>Activities History</Text>
-                    {history.length > 0 && (
-                        <TouchableOpacity onPress={handleDeleteAll} style={styles.deleteAllBtn}>
-                            <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF5252" />
-                            <Text style={styles.deleteAllText}>Clear</Text>
-                        </TouchableOpacity>
-                    )}
+                    <Text style={styles.title}>Activity History</Text>
                 </View>
-                <Text style={styles.subtitle}>Scientific burn tracking</Text>
+                <Text style={styles.subtitle}>Tracks burnt calories</Text>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContentList} showsVerticalScrollIndicator={false}>
@@ -152,7 +129,7 @@ export default function ActivityHistory() {
                                                     })()}
                                                 </Text>
                                                 <Text style={styles.activityName}>{item.type}</Text>
-                                                <Text style={styles.activityMeta}>{item.duration} mins</Text>
+                                                <Text style={styles.activityMeta}>{item.duration > 0 ? `${item.duration} mins` : 'Auto-Synced'}</Text>
                                             </View>
                                             <View style={styles.burnBadge}>
                                                 <Text style={styles.burnText}>-{item.caloriesBurned} cal</Text>

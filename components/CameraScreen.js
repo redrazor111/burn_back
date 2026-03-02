@@ -133,8 +133,8 @@ export default function CameraScreen() {
       <StatusBar barStyle="dark-content" />
 
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-        <Text style={styles.title}>AI Scanner</Text>
-        <Text style={styles.subtitle}>Analyze nutrition instantly with Gemini AI</Text>
+        <Text style={styles.title}>AI Food Scanner</Text>
+        <Text style={styles.subtitle}>Analyze nutrition instantly with AI</Text>
       </View>
 
       <View style={styles.cameraContainer}>
