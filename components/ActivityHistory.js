@@ -1,4 +1,4 @@
- 
+
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
@@ -105,7 +105,7 @@ export default function ActivityHistory() {
         <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
             <View style={styles.header}>
                 <View style={styles.headerTopRow}>
-                    <Text style={styles.title}>Activity Log</Text>
+                    <Text style={styles.title}>Activities History</Text>
                     {history.length > 0 && (
                         <TouchableOpacity onPress={handleDeleteAll} style={styles.deleteAllBtn}>
                             <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF5252" />

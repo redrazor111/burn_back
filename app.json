@@ -2,20 +2,20 @@
   "expo": {
     "name": "BurnBack",
     "slug": "burn_back",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "burnback",
     "userInterfaceStyle": "automatic",
     "android": {
+      "package": "com.softywareai.burn_back",
+      "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "package": "com.softywareai.burn_back",
       "permissions": [
         "CAMERA",
         "BILLING",
@@ -36,7 +36,23 @@
           }
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      [
+        "react-native-health-connect",
+        {
+          "permissions": [
+            "ActiveCaloriesBurned"
+          ]
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

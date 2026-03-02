@@ -5,7 +5,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   LayoutAnimation,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -27,7 +26,6 @@ export default function ScanHistory() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const [history, setHistory] = useState([]);
-  const [selectedItem, setSelectedItem] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState({});
 
   useEffect(() => {
@@ -39,6 +37,7 @@ export default function ScanHistory() {
           const historyData = Array.isArray(parsed) ? parsed : [];
           setHistory(historyData);
 
+          // Default sections to collapsed
           const initialCollapsedState = {};
           historyData.forEach(item => {
             initialCollapsedState[getSafeDateKey(item.date)] = true;
@@ -88,11 +87,11 @@ export default function ScanHistory() {
 
   const handleDeleteAll = () => {
     Alert.alert(
-      "Delete All Scan History",
+      "Clear Meals History",
       "This will permanently erase all past meal records.",
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: async () => {
+        { text: "Delete All", style: "destructive", onPress: async () => {
             await clearAllHistory();
             setHistory([]);
         }}
@@ -104,7 +103,7 @@ export default function ScanHistory() {
     <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
-          <Text style={styles.title}>Scan History</Text>
+          <Text style={styles.title}>Meals History</Text>
           {history.length > 0 && (
             <TouchableOpacity onPress={handleDeleteAll} style={styles.deleteAllBtn}>
               <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF5252" />
@@ -118,8 +117,8 @@ export default function ScanHistory() {
       <ScrollView contentContainerStyle={styles.scrollContentList} showsVerticalScrollIndicator={false}>
         {history.length === 0 ? (
           <View style={styles.placeholderContainer}>
-            <MaterialCommunityIcons name="history" size={60} color="#E0E0E0" />
-            <Text style={styles.placeholderText}>No scans found yet.</Text>
+            <MaterialCommunityIcons name="food-off" size={60} color="#E0E0E0" />
+            <Text style={styles.placeholderText}>No meals logged yet.</Text>
           </View>
         ) : (
           Object.keys(groupedData).sort((a, b) => b.localeCompare(a)).map((dateKey) => (
@@ -135,10 +134,11 @@ export default function ScanHistory() {
               {!collapsedSections[dateKey] && (
                 <View style={styles.itemsContainer}>
                   {groupedData[dateKey].items.map((item) => (
-                    <TouchableOpacity key={item.id} style={styles.historyCard} onPress={() => setSelectedItem(item)}>
+                    <View key={item.id} style={styles.historyCard}>
                       <View style={styles.historyIconBg}>
                         <MaterialCommunityIcons name="food-apple" size={26} color="#2E7D32" />
                       </View>
+
                       <View style={styles.historyDetails}>
                         <Text style={styles.historyTime}>
                           {(() => {
@@ -151,10 +151,12 @@ export default function ScanHistory() {
                           })()}
                         </Text>
                         <Text style={styles.historyFoodName}>{item.analysis?.identifiedProduct || "Unknown Item"}</Text>
-                        <Text style={styles.itemCalorieSnippet}>{item.analysis?.calories || 0} cal</Text>
                       </View>
-                      <MaterialCommunityIcons name="chevron-right" size={20} color="#CCC" />
-                    </TouchableOpacity>
+
+                      <View style={styles.calorieBadge}>
+                        <Text style={styles.calorieText}>{item.analysis?.calories || 0} cal</Text>
+                      </View>
+                    </View>
                   ))}
                 </View>
               )}
@@ -162,38 +164,6 @@ export default function ScanHistory() {
           ))
         )}
       </ScrollView>
-
-      {/* MINIMALIST DETAIL MODAL */}
-      <Modal visible={!!selectedItem} animationType="slide">
-        {selectedItem && (
-          <View style={[styles.modalContent, { paddingTop: insets.top }]}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setSelectedItem(null)}>
-                <MaterialCommunityIcons name="close" size={28} color="#333" />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Meal Details</Text>
-              <View style={{ width: 28 }} />
-            </View>
-
-            <View style={styles.textDetailHeader}>
-               <View style={styles.bigIconBg}>
-                 <MaterialCommunityIcons name="food-variant" size={50} color="#2E7D32" />
-               </View>
-               <Text style={styles.detailProductName}>{selectedItem.analysis?.identifiedProduct}</Text>
-               <View style={styles.calorieBadge}>
-                 <Text style={styles.detailCalories}>{selectedItem.analysis?.calories} kcal</Text>
-               </View>
-               <Text style={styles.detailDate}>Logged on {getReadableDate(getSafeDateKey(selectedItem.date))}</Text>
-            </View>
-
-            <View style={styles.modalFooter}>
-               <TouchableOpacity style={styles.closeFullBtn} onPress={() => setSelectedItem(null)}>
-                 <Text style={styles.closeFullBtnText}>Close Analysis</Text>
-               </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      </Modal>
     </View>
   );
 }
@@ -215,21 +185,10 @@ const styles = StyleSheet.create({
   historyCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#F5F5F5' },
   historyIconBg: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   historyDetails: { flex: 1 },
-  historyTime: { fontSize: 11, fontWeight: '700', color: '#BDBDBD' },
+  historyTime: { fontSize: 10, fontWeight: '700', color: '#BDBDBD' },
   historyFoodName: { fontSize: 16, fontWeight: '800', color: '#212529' },
-  itemCalorieSnippet: { fontSize: 13, color: '#2E7D32', fontWeight: '700' },
-  modalContent: { flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'space-between' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: '#1A1A1A' },
-  textDetailHeader: { alignItems: 'center', flex: 1, justifyContent: 'center', paddingHorizontal: 30 },
-  bigIconBg: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  detailProductName: { fontSize: 26, fontWeight: '900', color: '#1A1A1A', textAlign: 'center' },
-  calorieBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, marginTop: 15 },
-  detailCalories: { fontSize: 20, fontWeight: '800', color: '#2E7D32' },
-  detailDate: { fontSize: 14, color: '#9E9E9E', marginTop: 20, fontWeight: '600' },
-  modalFooter: { padding: 20, borderTopWidth: 1, borderTopColor: '#F0F0F0' },
-  closeFullBtn: { backgroundColor: '#1B4D20', paddingVertical: 16, borderRadius: 15, alignItems: 'center' },
-  closeFullBtnText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+  calorieBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
+  calorieText: { color: '#2E7D32', fontWeight: '800', fontSize: 13 },
   placeholderContainer: { alignItems: 'center', marginTop: 100 },
   placeholderText: { color: '#BDBDBD', marginTop: 15, fontSize: 16, fontWeight: '600' }
 });

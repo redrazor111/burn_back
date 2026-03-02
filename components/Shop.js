@@ -28,7 +28,7 @@ const AMAZON_CONFIG = {
   EG: { domain: 'amazon.eg', tag: 'softywareai-21' },
 };
 
-export default function Shop({ recommendedProducts }) {
+export default function Shop() {
   const insets = useSafeAreaInsets();
   const [searchTerm, setSearchTerm] = useState(''); // State for the search box
 

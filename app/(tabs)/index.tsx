@@ -19,21 +19,21 @@ import {
 
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Local Utilities & Components
 import { removeFromHistory, saveToHistory } from '@/utils/historyStorage';
-import { checkQuota, incrementQuota } from '@/utils/quotaService';
 import ActivityHistory from '../../components/ActivityHistory';
+import CameraScreen from '../../components/CameraScreen';
 import Guide from '../../components/Guide';
 import PremiumModal from '../../components/PremiumModal';
 import ScanHistory from '../../components/ScanHistory';
-import Scanner from '../../components/Scanner';
 import Shop from '../../components/Shop';
-import { analyzeImageWithGemini } from '../../utils/geminiService';
 import { useSubscriptionStatus } from '../../utils/subscription';
 
-import { MAX_ACTIVITIES } from '../../utils/constants';
+import { syncAndroidCalories } from '@/utils/syncAndroidCalories';
+import { MAX_ACTIVITIES, MAX_SEARCHES } from '../../utils/constants';
 
 const Tab = createMaterialTopTabNavigator();
 
@@ -47,7 +47,6 @@ const USER_AGE_KEY = '@user_age';
 const USER_WEIGHT_KEY = '@user_weight';
 
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
-type IoniconsName = ComponentProps<typeof Ionicons>['name'];
 
 interface ScanResult {
   id: string;
@@ -73,7 +72,7 @@ const ACTIVITY_TYPES: { label: string; met: number; icon: MaterialIconName }[] =
   { label: "Other", met: 4.5, icon: "dots-horizontal" },
 ];
 
-function CameraScreen({ onRecommendationsFound }: any) {
+function SummaryScreen({ onRecommendationsFound }: any) {
   const insets = useSafeAreaInsets();
 
   const [targetCalories, setTargetCalories] = useState('2000');
@@ -89,11 +88,17 @@ function CameraScreen({ onRecommendationsFound }: any) {
 
   const [isEditingTarget, setIsEditingTarget] = useState(false);
   const [isLoggingActivity, setIsLoggingActivity] = useState(false);
+  const [isLoggingFood, setIsLoggingFood] = useState(false); // Manual food log state
+
   const [selectedActivity, setSelectedActivity] = useState(ACTIVITY_TYPES[0]);
   const [activityDuration, setActivityDuration] = useState('30');
+  const [manualFoodName, setManualFoodName] = useState('');
+  const [manualFoodCals, setManualFoodCals] = useState('');
+
   const [scans, setScans] = useState<ScanResult[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSyncingWatch, setIsSyncingWatch] = useState(false);
   const [pendingResult, setPendingResult] = useState<PendingResult | null>(null);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [showPremium, setShowPremium] = useState(false);
@@ -136,21 +141,43 @@ function CameraScreen({ onRecommendationsFound }: any) {
         } else {
           await AsyncStorage.multiRemove([CURRENT_DAY_SCANS_KEY, CURRENT_DAY_ACTIVITIES_KEY, CURRENT_DAY_WATER_KEY]);
           await AsyncStorage.setItem(LAST_SAVED_DATE_KEY, today);
-          setScans([]);
-          setActivities([]);
-          setWaterCups(0);
+          setScans([]); setActivities([]); setWaterCups(0);
         }
-      } catch (e) {
-        console.error(e);
-        setScans([]);
-        setActivities([]);
-      } finally { isInitialLoadComplete.current = true; }
-
+      } catch (e) { console.error(e); } finally { isInitialLoadComplete.current = true; }
       const { status } = await Camera.requestCameraPermissionsAsync();
       setHasPermission(status === 'granted');
     };
     initializeAppData();
   }, []);
+
+  const syncWatchData = async () => {
+    if (isSyncingWatch || !isInitialLoadComplete.current) return;
+    setIsSyncingWatch(true);
+    try {
+      const watchCalories = await syncAndroidCalories();
+      if (watchCalories > 0) {
+        const todayStr = new Date().toDateString();
+        const syncId = `watch-${todayStr}`;
+        const watchEntry = {
+          id: syncId,
+          date: new Date().toISOString(),
+          type: 'Other',
+          icon: 'dots-horizontal',
+          duration: 0,
+          caloriesBurned: watchCalories
+        };
+        setActivities(prev => [watchEntry, ...prev.filter(a => a.id !== syncId)]);
+        const existingHistory = await AsyncStorage.getItem('activity_history');
+        let historyData = existingHistory ? JSON.parse(existingHistory) : [];
+        historyData = [watchEntry, ...historyData.filter((a: any) => a.id !== syncId)].slice(0, 500);
+        await AsyncStorage.setItem('activity_history', JSON.stringify(historyData));
+      }
+    } catch (e) { console.error("Watch sync failed", e); } finally {
+      setTimeout(() => setIsSyncingWatch(false), 2000);
+    }
+  };
+
+  useFocusEffect(React.useCallback(() => { if (isInitialLoadComplete.current) syncWatchData(); }, []));
 
   useEffect(() => {
     if (isInitialLoadComplete.current) {
@@ -168,9 +195,7 @@ function CameraScreen({ onRecommendationsFound }: any) {
           Animated.timing(scanLineAnim, { toValue: 0, duration: 2000, easing: Easing.linear, useNativeDriver: true }),
         ])
       ).start();
-    } else {
-      scanLineAnim.stopAnimation();
-    }
+    } else { scanLineAnim.stopAnimation(); }
   }, [isLoading]);
 
   const saveProfileData = async () => {
@@ -182,23 +207,18 @@ function CameraScreen({ onRecommendationsFound }: any) {
         AsyncStorage.setItem(USER_AGE_KEY, tempAge),
         AsyncStorage.setItem(USER_WEIGHT_KEY, tempWeight),
       ]);
-      setIsEditingTarget(false);
-      Keyboard.dismiss();
+      setIsEditingTarget(false); Keyboard.dismiss();
     } catch (e) { console.error(e); }
   };
 
   const handleAddActivity = async () => {
     if (!isPro && activities?.length >= MAX_ACTIVITIES) {
-      setIsLoggingActivity(false);
-      setShowPremium(true);
-      return;
+      setIsLoggingActivity(false); setShowPremium(true); return;
     }
     const mins = parseInt(activityDuration);
     if (isNaN(mins) || mins <= 0) return;
-
     const burnPerMin = (selectedActivity.met * parseFloat(weight) * 3.5) / 200;
     const totalBurned = Math.round(burnPerMin * mins);
-
     const newActivity = {
       id: Date.now().toString(),
       date: new Date().toISOString(),
@@ -207,20 +227,35 @@ function CameraScreen({ onRecommendationsFound }: any) {
       duration: mins,
       caloriesBurned: totalBurned
     };
-
-    const updated = [newActivity, ...(activities || [])];
-    setActivities(updated);
-
+    setActivities([newActivity, ...(activities || [])]);
     const existingHistory = await AsyncStorage.getItem('activity_history');
     const historyData = existingHistory ? JSON.parse(existingHistory) : [];
     await AsyncStorage.setItem('activity_history', JSON.stringify([newActivity, ...historyData].slice(0, 500)));
-
     setIsLoggingActivity(false);
   };
 
+  const handleManualFoodLog = async () => {
+    if (!isPro && scans?.length >= MAX_SEARCHES) {
+      setIsLoggingFood(false); setShowPremium(true); return;
+    }
+    const cals = parseInt(manualFoodCals);
+    if (!manualFoodName || isNaN(cals)) return;
+
+    const newScan: ScanResult = {
+      id: Date.now().toString(),
+      productName: manualFoodName,
+      calories: cals.toString(),
+    };
+
+    setScans(prev => [newScan, ...(prev || [])]);
+    await saveToHistory(manualFoodName, { identifiedProduct: manualFoodName, calories: cals });
+    setIsLoggingFood(false);
+    setManualFoodName('');
+    setManualFoodCals('');
+  };
+
   const deleteActivity = async (id: string) => {
-    const updated = (activities || []).filter(a => a.id !== id);
-    setActivities(updated);
+    setActivities(prev => prev.filter(a => a.id !== id));
     const storedHistory = await AsyncStorage.getItem('activity_history');
     if (storedHistory) {
       const filtered = JSON.parse(storedHistory).filter((i: any) => i.id !== id);
@@ -229,46 +264,27 @@ function CameraScreen({ onRecommendationsFound }: any) {
   };
 
   const deleteScan = async (id: string) => {
-    setScans(prev => (prev || []).filter(s => s.id !== id));
+    setScans(prev => prev.filter(s => s.id !== id));
     await removeFromHistory(id);
   };
 
   const handleOpenActivityLogger = () => {
-    if (!isPro && activities?.length >= MAX_ACTIVITIES) {
-      setShowPremium(true);
-    } else {
-      setIsLoggingActivity(true);
-    }
+    if (!isPro && activities?.length >= MAX_ACTIVITIES) setShowPremium(true);
+    else setIsLoggingActivity(true);
   };
 
-  const handleScan = async (base64Data: string) => {
-    if (!isPro) {
-      const status = await checkQuota();
-      if (status === 'LIMIT_REACHED') { setShowPremium(true); return; }
-    }
-    setIsLoading(true);
-    try {
-      const userContext = { gender, age, targetCalories, weight };
-      const rawResponse = await analyzeImageWithGemini(base64Data, isPro, userContext);
-      const data = JSON.parse(rawResponse);
-      await incrementQuota();
-
-      setPendingResult({
-        options: data.identifiedOptions,
-        rawResult: data
-      });
-    } catch (e) { console.error(e); } finally { setIsLoading(false); }
+  const handleOpenFoodLogger = () => {
+    if (!isPro && scans?.length >= MAX_SEARCHES) setShowPremium(true);
+    else setIsLoggingFood(true);
   };
 
   const confirmSelection = async (option: { name: string; calories: number }) => {
     if (!pendingResult) return;
-
     const newScan: ScanResult = {
       id: Date.now().toString(),
       productName: option.name,
       calories: option.calories.toString(),
     };
-
     setScans(prev => [newScan, ...(prev || [])]);
     await saveToHistory(option.name, { identifiedProduct: option.name, calories: option.calories });
     setPendingResult(null);
@@ -276,47 +292,42 @@ function CameraScreen({ onRecommendationsFound }: any) {
   };
 
   const startEditingOption = (opt: { name: string; calories: number }) => {
-    setEditName(opt.name);
-    setEditCals(opt.calories.toString());
-    setIsEditingSelection(true);
+    setEditName(opt.name); setEditCals(opt.calories.toString()); setIsEditingSelection(true);
   };
 
-  const adjustWater = (amount: number) => {
-    setWaterCups(prev => Math.max(0, prev + amount));
-  };
+  const adjustWater = (amount: number) => setWaterCups(prev => Math.max(0, prev + amount));
 
   const totalConsumed = (scans || []).reduce((sum, s) => sum + Number(s.calories), 0);
   const totalBurned = (activities || []).reduce((sum, a) => sum + a.caloriesBurned, 0);
   const remainingCalories = Math.max(Number(targetCalories) - totalConsumed + totalBurned, 0);
-  const translateY = scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 180] });
 
   return (
     <View style={styles.cameraTabContainer}>
       <StatusBar barStyle="dark-content" />
 
+      {/* Static Header */}
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-        <Text style={styles.title}>Capture Image</Text>
-        <Text style={styles.subtitle}>{age}yo {gender} • {weight}kg Profile Active</Text>
-      </View>
-
-      <View style={styles.cameraViewHalf}>
-        {hasPermission ? (
-          <>
-            <Scanner onScan={handleScan} disabled={isLoading} />
-            <View style={styles.viewfinderOverlay} pointerEvents="none">
-              <View style={styles.viewfinderBox}>
-                <View style={[styles.corner, styles.topLeft]} /><View style={[styles.corner, styles.topRight]} />
-                <View style={[styles.corner, styles.bottomLeft]} /><View style={[styles.corner, styles.bottomRight]} />
-                {isLoading && <Animated.View style={[styles.scanLine, { transform: [{ translateY }] }]} />}
-              </View>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View>
+            <Text style={styles.title}>Todays Dashboard</Text>
+            <Text style={styles.subtitle}>{age}yr {gender} • {weight}kg Profile Active</Text>
+          </View>
+          {isSyncingWatch && (
+            <View style={styles.syncIndicator}>
+              <ActivityIndicator size="small" color="#2196F3" />
+              <Text style={styles.syncText}>Watch Sync</Text>
             </View>
-          </>
-        ) : <View style={styles.placeholderCenter}><ActivityIndicator size="large" color="#ffffff" /></View>}
+          )}
+        </View>
       </View>
 
-      <View style={styles.resultsHalf}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollPadding}>
-
+      {/* Wrap everything below the header in flex: 1 to enable scrolling */}
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollPadding}
+        >
+          {/* 1. Profile Badge */}
           <TouchableOpacity
             style={styles.mainTargetBadge}
             onPress={() => {
@@ -326,13 +337,13 @@ function CameraScreen({ onRecommendationsFound }: any) {
             activeOpacity={0.9}
           >
             <View style={styles.targetSplitRow}>
-              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Goal</Text><Text style={styles.targetValue}>{targetCalories}</Text></View>
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Goal</Text><Text style={styles.targetValue}>{targetCalories}<Text style={styles.unitSmall}> CAL</Text></Text></View>
               <View style={styles.verticalDivider} />
-              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Food</Text><Text style={styles.targetValue}>{totalConsumed}</Text></View>
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Intake</Text><Text style={styles.targetValue}>{totalConsumed}<Text style={styles.unitSmall}> CAL</Text></Text></View>
               <View style={styles.verticalDivider} />
-              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Burned</Text><Text style={[styles.targetValue, { color: '#1976D2' }]}>{totalBurned}</Text></View>
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Burned</Text><Text style={[styles.targetValue, { color: '#1976D2' }]}>{totalBurned}<Text style={styles.unitSmall}> CAL</Text></Text></View>
               <View style={styles.verticalDivider} />
-              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Left</Text><Text style={[styles.targetValue, { color: remainingCalories <= 200 ? '#FF5252' : '#1B4D20' }]}>{remainingCalories}</Text></View>
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Left</Text><Text style={[styles.targetValue, { color: remainingCalories <= 200 ? '#FF5252' : '#1B4D20' }]}>{remainingCalories}<Text style={styles.unitSmall}> CAL</Text></Text></View>
             </View>
             <View style={styles.profileStrip}>
               <View style={styles.profileItem}><MaterialCommunityIcons name={gender === 'Male' ? "gender-male" : "gender-female"} size={16} color="#FFF" /><Text style={styles.profileItemText}>{gender.toUpperCase()}</Text></View>
@@ -342,22 +353,7 @@ function CameraScreen({ onRecommendationsFound }: any) {
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.logActivityBtn, (!isPro && activities?.length >= MAX_ACTIVITIES) && styles.logActivityBtnLocked]} onPress={handleOpenActivityLogger}>
-            <MaterialCommunityIcons name={(!isPro && activities?.length >= MAX_ACTIVITIES) ? "lock" : "plus-circle"} size={20} color={(!isPro && activities?.length >= MAX_ACTIVITIES) ? "#9E9E9E" : "#1B4D20"} />
-            <Text style={[styles.logActivityBtnText, (!isPro && activities?.length >= MAX_ACTIVITIES) && { color: "#9E9E9E" }]}>
-              {(!isPro && activities?.length >= MAX_ACTIVITIES) ? `Upgrade to log more` : "Log Exercise / Activity"}
-            </Text>
-          </TouchableOpacity>
-
-          {activities?.map((act) => (
-            <View key={act.id} style={styles.activityItem}>
-              <MaterialCommunityIcons name={act.icon as any} size={20} color="#2E7D32" />
-              <View style={styles.activityInfo}><Text style={styles.activityName}>{act.type}</Text><Text style={styles.activitySubText}>{act.duration} mins</Text></View>
-              <Text style={styles.activityBurn}>-{act.caloriesBurned} cal</Text>
-              <TouchableOpacity onPress={() => deleteActivity(act.id)}><Ionicons name="trash-outline" size={18} color="#FF5252" /></TouchableOpacity>
-            </View>
-          ))}
-
+          {/* 2. Water Tracker */}
           <View style={styles.waterTrackerContainer}>
             <View style={styles.waterHeader}>
               <MaterialCommunityIcons name="water" size={20} color="#2196F3" />
@@ -365,21 +361,21 @@ function CameraScreen({ onRecommendationsFound }: any) {
               <Text style={styles.waterCount}>{waterCups} <Text style={{ fontSize: 12, color: '#999' }}>cups</Text></Text>
             </View>
             <View style={styles.waterControls}>
-              <TouchableOpacity style={styles.waterBtn} onPress={() => adjustWater(-1)}>
-                <Ionicons name="remove-circle-outline" size={28} color="#9E9E9E" />
-              </TouchableOpacity>
-              <View style={styles.waterProgressTrack}>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                  <View key={i} style={[styles.waterDrop, waterCups >= i && styles.waterDropActive]} />
-                ))}
-              </View>
-              <TouchableOpacity style={styles.waterBtn} onPress={() => adjustWater(1)}>
-                <Ionicons name="add-circle-outline" size={28} color="#2196F3" />
-              </TouchableOpacity>
+              <TouchableOpacity style={styles.waterBtn} onPress={() => adjustWater(-1)}><Ionicons name="remove-circle-outline" size={28} color="#9E9E9E" /></TouchableOpacity>
+              <View style={styles.waterProgressTrack}>{[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (<View key={i} style={[styles.waterDrop, waterCups >= i && styles.waterDropActive]} />))}</View>
+              <TouchableOpacity style={styles.waterBtn} onPress={() => adjustWater(1)}><Ionicons name="add-circle-outline" size={28} color="#2196F3" /></TouchableOpacity>
             </View>
           </View>
 
-          <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Meals</Text></View>
+          {/* 3. Meals Section */}
+          <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Meals/Drink</Text></View>
+          <TouchableOpacity style={[styles.logActivityBtn, (!isPro && scans?.length >= MAX_SEARCHES) && styles.logActivityBtnLocked, { marginTop: 0, marginBottom: 15 }]} onPress={handleOpenFoodLogger}>
+            <MaterialCommunityIcons name={(!isPro && scans?.length >= MAX_SEARCHES) ? "lock" : "plus-circle"} size={20} color={(!isPro && scans?.length >= MAX_SEARCHES) ? "#9E9E9E" : "#1B4D20"} />
+            <Text style={styles.logActivityBtnText}>
+              {(!isPro && scans?.length >= MAX_SEARCHES) ? `Upgrade to log more` : "Log Meals/Drink"}
+            </Text>
+          </TouchableOpacity>
+
           {scans?.map((item) => (
             <View key={item.id} style={styles.collapsibleCard}>
               <View style={styles.cardHeader}>
@@ -391,31 +387,38 @@ function CameraScreen({ onRecommendationsFound }: any) {
               </View>
             </View>
           ))}
+
+          {/* 4. Activities Section */}
+          <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Activities</Text></View>
+          <TouchableOpacity style={[styles.logActivityBtn, (!isPro && activities?.length >= MAX_ACTIVITIES) && styles.logActivityBtnLocked]} onPress={handleOpenActivityLogger}>
+            <MaterialCommunityIcons name={(!isPro && activities?.length >= MAX_ACTIVITIES) ? "lock" : "plus-circle"} size={20} color={(!isPro && activities?.length >= MAX_ACTIVITIES) ? "#9E9E9E" : "#1B4D20"} />
+            <Text style={styles.logActivityBtnText}>
+              {(!isPro && activities?.length >= MAX_ACTIVITIES) ? `Upgrade to log more` : "Log Exercise/Activity"}
+            </Text>
+          </TouchableOpacity>
+
+          {activities?.map((act) => (
+            <View key={act.id} style={styles.activityItem}>
+              <MaterialCommunityIcons name={act.icon as any} size={20} color={act.id.toString().includes('watch') ? "#2196F3" : "#2E7D32"} />
+              <View style={styles.activityInfo}><Text style={styles.activityName}>{act.type}</Text><Text style={styles.activitySubText}>{act.duration > 0 ? `${act.duration} mins` : 'Auto-Synced'}</Text></View>
+              <Text style={styles.activityBurn}>-{act.caloriesBurned} cal</Text>
+              <TouchableOpacity onPress={() => deleteActivity(act.id)}><Ionicons name="trash-outline" size={18} color="#FF5252" /></TouchableOpacity>
+            </View>
+          ))}
         </ScrollView>
       </View>
 
       {/* MODALS SECTION */}
-      {/* 1. SELECTION MODAL - FIXED FOR ANDROID */}
       {pendingResult && (
         <Modal visible={!!pendingResult} transparent animationType="fade" statusBarTranslucent onRequestClose={() => { setPendingResult(null); setIsEditingSelection(false); }}>
           <View style={styles.androidOverlay}>
             <View style={styles.androidSelectionBox}>
-              <TouchableOpacity style={styles.absCloseBtn} onPress={() => { setPendingResult(null); setIsEditingSelection(false); }}>
-                <MaterialCommunityIcons name="close" size={24} color="#9E9E9E" />
-              </TouchableOpacity>
-
+              <TouchableOpacity style={styles.absCloseBtn} onPress={() => { setPendingResult(null); setIsEditingSelection(false); }}><MaterialCommunityIcons name="close" size={24} color="#9E9E9E" /></TouchableOpacity>
               <Text style={styles.editTitle}>{isEditingSelection ? "Adjust Details" : "Select Best Match"}</Text>
-
               {isEditingSelection ? (
                 <View style={{ width: '100%', padding: 10 }}>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Food Name</Text>
-                    <TextInput style={[styles.editInputSmall, { textAlign: 'left' }]} value={editName} onChangeText={setEditName} />
-                  </View>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Calories</Text>
-                    <TextInput style={styles.editInputSmall} value={editCals} onChangeText={setEditCals} keyboardType="numeric" />
-                  </View>
+                  <View style={styles.inputGroup}><Text style={styles.inputLabel}>Food Name</Text><TextInput style={[styles.editInputSmall, { textAlign: 'left' }]} value={editName} onChangeText={setEditName} /></View>
+                  <View style={styles.inputGroup}><Text style={styles.inputLabel}>Calories</Text><TextInput style={styles.editInputSmall} value={editCals} onChangeText={setEditCals} keyboardType="numeric" /></View>
                   <View style={styles.editActions}>
                     <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsEditingSelection(false)}><Text>Back</Text></TouchableOpacity>
                     <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={() => confirmSelection({ name: editName, calories: parseInt(editCals) || 0 })}><Text style={{ color: '#fff' }}>Add Meal</Text></TouchableOpacity>
@@ -427,17 +430,10 @@ function CameraScreen({ onRecommendationsFound }: any) {
                     <ScrollView showsVerticalScrollIndicator onStartShouldSetResponderCapture={() => true}>
                       {pendingResult?.options?.map((opt, idx) => (
                         <View key={idx} style={styles.optionCard}>
-                          <TouchableOpacity style={{ flex: 1 }} onPress={() => confirmSelection(opt)}>
-                            <Text style={styles.optionName}>{opt.name}</Text>
-                            <Text style={styles.optionCal}>{opt.calories} cal</Text>
-                          </TouchableOpacity>
+                          <TouchableOpacity style={{ flex: 1 }} onPress={() => confirmSelection(opt)}><Text style={styles.optionName}>{opt.name}</Text><Text style={styles.optionCal}>{opt.calories} cal</Text></TouchableOpacity>
                           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <TouchableOpacity onPress={() => startEditingOption(opt)} style={{ padding: 8 }}>
-                              <Ionicons name="pencil" size={20} color="#9E9E9E" />
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => confirmSelection(opt)} style={{ padding: 8 }}>
-                              <Ionicons name="add-circle" size={28} color="#1B4D20" />
-                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => startEditingOption(opt)} style={{ padding: 8 }}><Ionicons name="pencil" size={20} color="#9E9E9E" /></TouchableOpacity>
+                            <TouchableOpacity onPress={() => confirmSelection(opt)} style={{ padding: 8 }}><Ionicons name="add-circle" size={28} color="#1B4D20" /></TouchableOpacity>
                           </View>
                         </View>
                       ))}
@@ -451,24 +447,29 @@ function CameraScreen({ onRecommendationsFound }: any) {
         </Modal>
       )}
 
-      {/* 2. ACTIVITY LOGGING MODAL */}
+      {/* MANUAL FOOD LOG MODAL */}
+      {isLoggingFood && (
+        <View style={styles.editOverlay}>
+          <View style={styles.editBox}>
+            <Text style={styles.editTitle}>Manual Food Log</Text>
+            <View style={styles.inputGroup}><Text style={styles.inputLabel}>Food / Drink Name</Text><TextInput style={[styles.editInputSmall, { textAlign: 'left' }]} value={manualFoodName} onChangeText={setManualFoodName} placeholder="e.g. Protein Shake" /></View>
+            <View style={styles.inputGroup}><Text style={styles.inputLabel}>Calories</Text><TextInput style={styles.editInputSmall} value={manualFoodCals} onChangeText={setManualFoodCals} keyboardType="numeric" placeholder="0" /></View>
+            <View style={styles.editActions}>
+              <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsLoggingFood(false)}><Text>Cancel</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={handleManualFoodLog}><Text style={{ color: '#fff' }}>Add Log</Text></TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* ACTIVITY LOGGING MODAL */}
       {isLoggingActivity && (
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>
             <Text style={styles.editTitle}>Log Exercise</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.activitySelector}
-              onStartShouldSetResponderCapture={() => true}
-              onTouchEnd={(e) => e.stopPropagation()}
-            >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activitySelector} onStartShouldSetResponderCapture={() => true} onTouchEnd={(e) => e.stopPropagation()}>
               {ACTIVITY_TYPES.map((act) => (
-                <TouchableOpacity
-                  key={act.label}
-                  style={[styles.activityTypeBtn, selectedActivity.label === act.label && styles.activityTypeBtnActive]}
-                  onPress={() => setSelectedActivity(act)}
-                >
+                <TouchableOpacity key={act.label} style={[styles.activityTypeBtn, selectedActivity.label === act.label && styles.activityTypeBtnActive]} onPress={() => setSelectedActivity(act)}>
                   <MaterialCommunityIcons name={act.icon as any} size={24} color={selectedActivity.label === act.label ? "#FFF" : "#1B4D20"} />
                   <Text style={[styles.activityTypeLabel, selectedActivity.label === act.label && styles.activityTypeLabelActive]}>{act.label}</Text>
                 </TouchableOpacity>
@@ -483,43 +484,17 @@ function CameraScreen({ onRecommendationsFound }: any) {
         </View>
       )}
 
-      {/* 3. PROFILE MODAL */}
       {/* PROFILE MODAL */}
       {isEditingTarget && (
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>
             <Text style={styles.editTitle}>Edit Profile</Text>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Calorie Goal</Text>
-              <TextInput style={styles.editInputSmall} value={tempCalories} onChangeText={setTempCalories} keyboardType="numeric" />
-            </View>
-
+            <View style={styles.inputGroup}><Text style={styles.inputLabel}>Calorie Goal</Text><TextInput style={styles.editInputSmall} value={tempCalories} onChangeText={setTempCalories} keyboardType="numeric" /></View>
             <View style={styles.row}>
-              {/* Gender - Takes up half the row */}
-              <View style={[styles.inputGroup, { flex: 2, marginRight: 8 }]}>
-                <Text style={styles.inputLabel}>Gender</Text>
-                <View style={styles.genderPicker}>
-                  {['Male', 'Female'].map(g => (
-                    <TouchableOpacity key={g} onPress={() => setTempGender(g)} style={[styles.genderBtn, tempGender === g && styles.genderBtnActive]}>
-                      <Text style={{ fontSize: 12, color: tempGender === g ? '#1B4D20' : '#999' }}>{g}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {/* Age - Flexible */}
-              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-                <Text style={styles.inputLabel} numberOfLines={1}>Age</Text>
-                <TextInput style={styles.editInputSmall} value={tempAge} onChangeText={setTempAge} keyboardType="numeric" />
-              </View>
-
-              {/* Weight - Flexible */}
-              <View style={[styles.inputGroup, { flex: 1.2 }]}>
-                <Text style={styles.inputLabel} numberOfLines={1}>Wt (kg)</Text>
-                <TextInput style={styles.editInputSmall} value={tempWeight} onChangeText={setTempWeight} keyboardType="numeric" />
-              </View>
+              <View style={[styles.inputGroup, { flex: 2, marginRight: 8 }]}><Text style={styles.inputLabel}>Gender</Text><View style={styles.genderPicker}>{['Male', 'Female'].map(g => (<TouchableOpacity key={g} onPress={() => setTempGender(g)} style={[styles.genderBtn, tempGender === g && styles.genderBtnActive]}><Text style={{ fontSize: 12, color: tempGender === g ? '#1B4D20' : '#999' }}>{g}</Text></TouchableOpacity>))}</View></View>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}><Text style={styles.inputLabel} numberOfLines={1}>Age</Text><TextInput style={styles.editInputSmall} value={tempAge} onChangeText={setTempAge} keyboardType="numeric" /></View>
+              <View style={[styles.inputGroup, { flex: 1.2 }]}><Text style={styles.inputLabel} numberOfLines={1}>Wt (kg)</Text><TextInput style={styles.editInputSmall} value={tempWeight} onChangeText={setTempWeight} keyboardType="numeric" /></View>
             </View>
-
             <View style={styles.editActions}>
               <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsEditingTarget(false)}><Text>Cancel</Text></TouchableOpacity>
               <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={saveProfileData}><Text style={{ color: '#fff' }}>Save</Text></TouchableOpacity>
@@ -527,33 +502,51 @@ function CameraScreen({ onRecommendationsFound }: any) {
           </View>
         </View>
       )}
-
       <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} />
     </View>
   );
 }
 
-// NAVIGATION COMPONENT
 function AppContent() {
   const insets = useSafeAreaInsets();
-  const [recommendations, setRecommendations] = useState<string[]>([]);
-  const iconMap: Record<string, IoniconsName> = { Camera: 'camera-outline', Meals: 'time-outline', Activities: 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
+
+  // FIX: Add Record<string, string> or Record<string, any>
+  const iconMap: Record<string, any> = {
+    Today: 'calendar-outline',
+    Camera: 'camera-outline',
+    Meals: 'fast-food-outline',
+    Activities: 'fitness-outline',
+    Guide: 'book-outline',
+    Shop: 'cart-outline'
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <Tab.Navigator tabBarPosition="bottom" screenOptions={({ route }) => ({
-        tabBarActiveTintColor: '#1B4D20', tabBarInactiveTintColor: '#9E9E9E',
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '700', textTransform: 'none' },
-        tabBarStyle: { height: 75 + insets.bottom, paddingBottom: insets.bottom },
-        tabBarIcon: ({ color, focused }) => {
-          const iconName = iconMap[route.name] || 'help-circle-outline';
-          return <Ionicons name={focused ? iconName.replace('-outline', '') as any : iconName as any} size={24} color={color} />;
-        },
-      })}>
-        <Tab.Screen name="Camera">{() => <CameraScreen onRecommendationsFound={setRecommendations} />}</Tab.Screen>
+      <Tab.Navigator
+        tabBarPosition="bottom"
+        screenOptions={({ route }) => ({
+          tabBarActiveTintColor: '#1B4D20',
+          tabBarInactiveTintColor: '#9E9E9E',
+          tabBarLabelStyle: { fontSize: 10, fontWeight: '700', textTransform: 'none' },
+          tabBarStyle: { height: 75 + insets.bottom, paddingBottom: insets.bottom },
+          tabBarIcon: ({ color, focused }) => {
+            // TypeScript is now happy because iconMap is a Record
+            const baseIconName = iconMap[route.name] || 'help-circle-outline';
+
+            const finalIconName = focused
+              ? baseIconName.replace('-outline', '')
+              : baseIconName;
+
+            return <Ionicons name={finalIconName as any} size={24} color={color} />;
+          },
+        })}
+      >
+        <Tab.Screen name="Today">{() => <SummaryScreen />}</Tab.Screen>
+        <Tab.Screen name="Camera">{() => <CameraScreen />}</Tab.Screen>
         <Tab.Screen name="Meals">{() => <ScanHistory />}</Tab.Screen>
         <Tab.Screen name="Activities">{() => <ActivityHistory />}</Tab.Screen>
         <Tab.Screen name="Guide">{() => <Guide />}</Tab.Screen>
-        <Tab.Screen name="Shop">{() => <Shop recommendedProducts={recommendations} />}</Tab.Screen>
+        <Tab.Screen name="Shop">{() => <Shop />}</Tab.Screen>
       </Tab.Navigator>
     </View>
   );
@@ -566,8 +559,8 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingBottom: 15, backgroundColor: '#fff', zIndex: 10, elevation: 5 },
   title: { fontSize: 24, fontWeight: '800', color: '#1A1A1A' },
   subtitle: { fontSize: 14, color: '#757575', marginTop: 4 },
-  cameraViewHalf: { height: '35%', backgroundColor: '#000', borderBottomLeftRadius: 30, borderBottomRightRadius: 30, overflow: 'hidden' },
-  resultsHalf: { flex: 1, paddingHorizontal: 16 },
+  syncIndicator: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E3F2FD', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  syncText: { fontSize: 10, fontWeight: '800', color: '#2196F3', marginLeft: 5, textTransform: 'uppercase' },
   mainTargetBadge: { backgroundColor: '#FFFFFF', borderRadius: 30, marginTop: 20, elevation: 8, shadowOpacity: 0.1, shadowRadius: 10, borderWidth: 1, borderColor: '#F0F0F0', overflow: 'hidden' },
   targetSplitRow: { flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'center', padding: 18 },
   targetColumn: { alignItems: 'center', flex: 1 },
@@ -617,7 +610,11 @@ const styles = StyleSheet.create({
   activityTypeBtnActive: { backgroundColor: '#1B4D20' },
   activityTypeLabel: { fontSize: 10, fontWeight: '800', marginTop: 5, color: '#1B4D20' },
   activityTypeLabelActive: { color: '#FFF' },
-  scrollPadding: { paddingBottom: 60 },
+  scrollPadding: {
+    paddingHorizontal: 16, // Matches your resultsHalf padding
+    paddingTop: 10,
+    paddingBottom: 100, // Extra space at the bottom to ensure activities are fully visible
+  },
   placeholderCenter: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   viewfinderOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
   viewfinderBox: { width: 220, height: 140 },
@@ -627,117 +624,18 @@ const styles = StyleSheet.create({
   bottomLeft: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
   bottomRight: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
   scanLine: { height: 2, backgroundColor: '#4CAF50', width: '100%' },
-  absCloseBtn: {
-    position: 'absolute',
-    top: 15,
-    right: 15,
-    zIndex: 10,
-    padding: 5
-  },
-  closeBtn: { marginTop: 20 },
-  editBox: {
-    backgroundColor: '#FFF',
-    width: '92%',
-    padding: 25,
-    borderRadius: 25,
-    position: 'relative',
-    elevation: 20,
-  },
-  optionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F5F5F5',
-    padding: 16,
-    borderRadius: 15,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E0E0E0'
-  },
-  optionName: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#1A1A1A'
-  },
-  optionCal: {
-    fontSize: 14,
-    color: '#2E7D32',
-    fontWeight: '700',
-    marginTop: 2
-  },
-  closeText: {
-    color: '#9E9E9E',
-    fontWeight: '800',
-    textAlign: 'center'
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-end', // Aligns bottom of inputs
-    justifyContent: 'space-between',
-    width: '100%'
-  },
-  inputGroup: {
-    marginBottom: 15
-  },
-  inputLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#999',
-    marginBottom: 5,
-    textTransform: 'uppercase'
-  },
-  editInputSmall: {
-    backgroundColor: '#F5F5F5',
-    padding: 10,
-    borderRadius: 10,
-    fontSize: 15,
-    fontWeight: '700',
-    textAlign: 'center'
-  },
-  selectionFooter: {
-    paddingTop: 10,
-  },
-
-  cancelBtn: {
-    backgroundColor: '#F5F5F5',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    width: '100%',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  selectionBox: {
-    backgroundColor: '#FFF',
-    width: '92%',
-    maxHeight: '85%',
-    borderRadius: 25,
-    padding: 25,
-    elevation: 10,
-  },
-
-  selectionScroll: {
-    flex: 1,
-    marginBottom: 15,
-  },
-  androidOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  androidSelectionBox: {
-    width: '94%',
-    maxHeight: '90%',
-    backgroundColor: '#FFF',
-    borderRadius: 20,
-    padding: 20,
-    elevation: 50, // 🔥 important for Android
-  },
+  absCloseBtn: { position: 'absolute', top: 15, right: 15, zIndex: 10, padding: 5 },
+  editBox: { backgroundColor: '#FFF', width: '92%', padding: 25, borderRadius: 25, position: 'relative', elevation: 20, alignItems: 'center' },
+  optionCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F5F5F5', padding: 16, borderRadius: 15, marginBottom: 10, borderWidth: 1, borderColor: '#E0E0E0' },
+  optionName: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
+  optionCal: { fontSize: 14, color: '#2E7D32', fontWeight: '700', marginTop: 2 },
+  closeText: { color: '#9E9E9E', fontWeight: '800', textAlign: 'center' },
+  row: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', width: '100%' },
+  inputGroup: { marginBottom: 15, width: '100%' },
+  inputLabel: { fontSize: 10, fontWeight: '800', color: '#999', marginBottom: 5, textTransform: 'uppercase' },
+  editInputSmall: { backgroundColor: '#F5F5F5', padding: 10, borderRadius: 10, fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  cancelBtn: { backgroundColor: '#F5F5F5', paddingVertical: 14, borderRadius: 12, alignItems: 'center', width: '100%' },
+  androidOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
+  androidSelectionBox: { width: '94%', maxHeight: '90%', backgroundColor: '#FFF', borderRadius: 20, padding: 20, elevation: 50 },
+  unitSmall: { fontSize: 8, fontWeight: '700', color: '#9E9E9E' },
 });
