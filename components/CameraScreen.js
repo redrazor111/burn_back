@@ -131,10 +131,10 @@ export default function CameraScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <Text style={styles.title}>AI Food Scanner</Text>
-        <Text style={styles.subtitle}>Analyze nutrition instantly with AI</Text>
+        <View style={styles.headerAccentBar} />
+        <Text style={styles.subtitle}>ANALYZE NUTRITION INSTANTLY WITH AI</Text>
       </View>
 
       <View style={styles.cameraContainer}>
@@ -233,9 +233,36 @@ export default function CameraScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FBFBFB' },
-  header: { paddingHorizontal: 20, paddingBottom: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  title: { fontSize: 24, fontWeight: '800', color: '#1A1A1A', letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, color: '#757575', marginTop: 4 },
+  header: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: '#fff',
+    elevation: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#1B4D20', // <--- Your primary brand green
+    letterSpacing: -1, // Tight tracking looks better with colored titles
+  },
+  headerAccentBar: {
+    width: 45,
+    height: 4,
+    backgroundColor: '#1B4D20',
+    opacity: 0.2, // Making the bar semi-transparent makes the title the star
+    borderRadius: 2,
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+  },
   cameraContainer: { flex: 1, backgroundColor: '#000' },
   cameraWrapper: { flex: 1 },
   viewfinderOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },

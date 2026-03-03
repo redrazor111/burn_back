@@ -86,11 +86,12 @@ export default function ActivityHistory() {
 
     return (
         <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
                 <View style={styles.headerTopRow}>
                     <Text style={styles.title}>Activity History</Text>
                 </View>
-                <Text style={styles.subtitle}>Tracks burnt calories</Text>
+                <View style={styles.headerAccentBar} />
+                <Text style={styles.subtitle}>TRACKS BURNT CALORIES</Text>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContentList} showsVerticalScrollIndicator={false}>
@@ -148,10 +149,37 @@ export default function ActivityHistory() {
 
 const styles = StyleSheet.create({
     fullScreen: { flex: 1, backgroundColor: '#FBFBFB' },
-    header: { paddingHorizontal: 20, paddingVertical: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
     headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    title: { fontSize: 24, fontWeight: '800', color: '#1A1A1A' },
-    subtitle: { fontSize: 13, color: '#757575', marginTop: 4 },
+    header: {
+        paddingHorizontal: 20,
+        paddingBottom: 20,
+        backgroundColor: '#fff',
+        elevation: 4,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F0F0F0',
+    },
+    title: {
+        fontSize: 28,
+        fontWeight: '900',
+        color: '#1B4D20', // <--- Your primary brand green
+        letterSpacing: -1, // Tight tracking looks better with colored titles
+    },
+    headerAccentBar: {
+        width: 45,
+        height: 4,
+        backgroundColor: '#1B4D20',
+        opacity: 0.2, // Making the bar semi-transparent makes the title the star
+        borderRadius: 2,
+        marginTop: 2,
+        marginBottom: 8,
+    },
+    subtitle: {
+        fontSize: 12,
+        color: '#666',
+        fontWeight: '800',
+        textTransform: 'uppercase',
+        letterSpacing: 1.2,
+    },
     deleteAllBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF0F0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
     deleteAllText: { color: '#FF5252', fontSize: 11, fontWeight: '800', marginLeft: 4 },
     scrollContentList: { paddingHorizontal: 20, paddingBottom: 40 },
