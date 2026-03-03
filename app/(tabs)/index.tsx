@@ -4,7 +4,6 @@ import { Camera } from 'expo-camera';
 import React, { ComponentProps, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Easing,
   Keyboard,
@@ -42,7 +41,7 @@ import ScanHistory from '../../components/ScanHistory';
 import Shop from '../../components/Shop';
 import { useSubscriptionStatus } from '../../utils/subscription';
 
-import { syncAndroidCalories } from '@/utils/syncAndroidCalories';
+// import { syncAndroidCalories } from '@/utils/syncAndroidCalories';
 import { MAX_ACTIVITIES, MAX_MEALS } from '../../utils/constants';
 
 const Tab = createMaterialTopTabNavigator();
@@ -160,34 +159,34 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     initializeAppData();
   }, []);
 
-  const syncWatchData = async () => {
-    if (isSyncingWatch || !isInitialLoadComplete.current) return;
-    setIsSyncingWatch(true);
-    try {
-      const watchCalories = await syncAndroidCalories();
-      if (watchCalories > 0) {
-        const todayStr = new Date().toDateString();
-        const syncId = `watch-${todayStr}`;
-        const watchEntry = {
-          id: syncId,
-          date: new Date().toISOString(),
-          type: 'Other',
-          icon: 'dots-horizontal',
-          duration: 0,
-          caloriesBurned: watchCalories
-        };
-        setActivities(prev => [watchEntry, ...prev.filter(a => a.id !== syncId)]);
-        const existingHistory = await AsyncStorage.getItem('activity_history');
-        let historyData = existingHistory ? JSON.parse(existingHistory) : [];
-        historyData = [watchEntry, ...historyData.filter((a: any) => a.id !== syncId)].slice(0, 500);
-        await AsyncStorage.setItem('activity_history', JSON.stringify(historyData));
-      }
-    } catch (e) { console.error("Watch sync failed", e); } finally {
-      setTimeout(() => setIsSyncingWatch(false), 2000);
-    }
-  };
+  // const syncWatchData = async () => {
+  //   if (isSyncingWatch || !isInitialLoadComplete.current) return;
+  //   setIsSyncingWatch(true);
+  //   try {
+  //     const watchCalories = await syncAndroidCalories();
+  //     if (watchCalories > 0) {
+  //       const todayStr = new Date().toDateString();
+  //       const syncId = `watch-${todayStr}`;
+  //       const watchEntry = {
+  //         id: syncId,
+  //         date: new Date().toISOString(),
+  //         type: 'Other',
+  //         icon: 'dots-horizontal',
+  //         duration: 0,
+  //         caloriesBurned: watchCalories
+  //       };
+  //       setActivities(prev => [watchEntry, ...prev.filter(a => a.id !== syncId)]);
+  //       const existingHistory = await AsyncStorage.getItem('activity_history');
+  //       let historyData = existingHistory ? JSON.parse(existingHistory) : [];
+  //       historyData = [watchEntry, ...historyData.filter((a: any) => a.id !== syncId)].slice(0, 500);
+  //       await AsyncStorage.setItem('activity_history', JSON.stringify(historyData));
+  //     }
+  //   } catch (e) { console.error("Watch sync failed", e); } finally {
+  //     setTimeout(() => setIsSyncingWatch(false), 2000);
+  //   }
+  // };
 
-  useFocusEffect(React.useCallback(() => { if (isInitialLoadComplete.current) syncWatchData(); }, []));
+  // useFocusEffect(React.useCallback(() => { if (isInitialLoadComplete.current) syncWatchData(); }, []));
   useFocusEffect(
     React.useCallback(() => {
       const loadFreshData = async () => {
@@ -322,28 +321,28 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     else setIsLoggingFood(true);
   };
 
-  const handleGoogleFitSync = async () => {
-    if (isSyncingWatch) return;
-    setIsSyncingWatch(true);
-    try {
-      const watchCalories = await syncAndroidCalories();
-      if (watchCalories > 0) {
-        const todayStr = new Date().toDateString();
-        const syncId = `watch-${todayStr}`;
-        const watchEntry = {
-          id: syncId, date: new Date().toISOString(), type: 'Google Fit Sync', icon: 'google-fit', duration: 0, caloriesBurned: watchCalories
-        };
-        const updatedActivities = [watchEntry, ...activities.filter(a => a.id !== syncId)];
-        setActivities(updatedActivities);
-        await AsyncStorage.setItem(CURRENT_DAY_ACTIVITIES_KEY, JSON.stringify(updatedActivities));
-        const existingHistory = await AsyncStorage.getItem('activity_history');
-        let historyData = existingHistory ? JSON.parse(existingHistory) : [];
-        historyData = [watchEntry, ...historyData.filter((a: any) => a.id !== syncId)].slice(0, 500);
-        await AsyncStorage.setItem('activity_history', JSON.stringify(historyData));
-        Alert.alert("Sync Complete", `Imported ${watchCalories} calories from Google Fit.`);
-      } else { Alert.alert("Sync", "No new active calories found for today in Google Fit."); }
-    } catch (e) { console.error("Manual sync failed", e); } finally { setIsSyncingWatch(false); }
-  };
+  // const handleGoogleFitSync = async () => {
+  //   if (isSyncingWatch) return;
+  //   setIsSyncingWatch(true);
+  //   try {
+  //     const watchCalories = await syncAndroidCalories();
+  //     if (watchCalories > 0) {
+  //       const todayStr = new Date().toDateString();
+  //       const syncId = `watch-${todayStr}`;
+  //       const watchEntry = {
+  //         id: syncId, date: new Date().toISOString(), type: 'Google Fit Sync', icon: 'google-fit', duration: 0, caloriesBurned: watchCalories
+  //       };
+  //       const updatedActivities = [watchEntry, ...activities.filter(a => a.id !== syncId)];
+  //       setActivities(updatedActivities);
+  //       await AsyncStorage.setItem(CURRENT_DAY_ACTIVITIES_KEY, JSON.stringify(updatedActivities));
+  //       const existingHistory = await AsyncStorage.getItem('activity_history');
+  //       let historyData = existingHistory ? JSON.parse(existingHistory) : [];
+  //       historyData = [watchEntry, ...historyData.filter((a: any) => a.id !== syncId)].slice(0, 500);
+  //       await AsyncStorage.setItem('activity_history', JSON.stringify(historyData));
+  //       Alert.alert("Sync Complete", `Imported ${watchCalories} calories from Google Fit.`);
+  //     } else { Alert.alert("Sync", "No new active calories found for today in Google Fit."); }
+  //   } catch (e) { console.error("Manual sync failed", e); } finally { setIsSyncingWatch(false); }
+  // };
 
   const confirmSelection = async (option: { name: string; calories: number }) => {
     if (!pendingResult) return;
@@ -498,7 +497,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                     <ScrollView showsVerticalScrollIndicator onStartShouldSetResponderCapture={() => true}>
                       {pendingResult?.options?.map((opt, idx) => (
                         <View key={idx} style={styles.optionCard}>
-                          <TouchableOpacity style={{ flex: 1 }} onPress={() => confirmSelection(opt)}><Text style={styles.optionName}>{opt.name}</Text><Text style={styles.optionCal}>{opt.calories} cal</Text></TouchableOpacity>
+                          <TouchableOpacity style={{ flex: 1 }}><Text style={styles.optionName}>{opt.name}</Text><Text style={styles.optionCal}>{opt.calories} cal</Text></TouchableOpacity>
                           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <TouchableOpacity onPress={() => startEditingOption(opt)} style={{ padding: 8 }}><Ionicons name="pencil" size={20} color="#9E9E9E" /></TouchableOpacity>
                             <TouchableOpacity onPress={() => confirmSelection(opt)} style={{ padding: 8 }}><Ionicons name="add-circle" size={28} color="#1B4D20" /></TouchableOpacity>

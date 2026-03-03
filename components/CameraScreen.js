@@ -1,7 +1,7 @@
 
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // ADD THIS
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { Camera } from 'expo-camera';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -32,6 +32,7 @@ const CURRENT_DAY_SCANS_KEY = '@current_day_scans';
 
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const { isPro } = useSubscriptionStatus();
   const isFocused = useIsFocused();
 
@@ -112,6 +113,8 @@ export default function CameraScreen() {
       // Reset states
       setPendingResult(null);
       setIsEditingSelection(false);
+
+      navigation.navigate('Today');
     } catch (e) {
       console.error("Confirmation Error:", e);
     }
@@ -171,10 +174,6 @@ export default function CameraScreen() {
         <Modal visible={!!pendingResult} transparent animationType="fade" statusBarTranslucent>
           <View style={styles.androidOverlay}>
             <View style={styles.androidSelectionBox}>
-              <TouchableOpacity style={styles.absCloseBtn} onPress={() => setPendingResult(null)}>
-                <MaterialCommunityIcons name="close" size={24} color="#9E9E9E" />
-              </TouchableOpacity>
-
               <Text style={styles.editTitle}>{isEditingSelection ? "Adjust Details" : "Select Best Match"}</Text>
 
               {isEditingSelection ? (
@@ -201,7 +200,7 @@ export default function CameraScreen() {
                   <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
                     {pendingResult?.options?.map((opt, idx) => (
                       <View key={idx} style={styles.optionCard}>
-                        <TouchableOpacity style={{ flex: 1 }} onPress={() => confirmSelection(opt)}>
+                        <TouchableOpacity style={{ flex: 1 }}>
                           <Text style={styles.optionName}>{opt.name}</Text>
                           <Text style={styles.optionCal}>{opt.calories} cal</Text>
                         </TouchableOpacity>
@@ -281,7 +280,6 @@ const styles = StyleSheet.create({
   // Modal Styles
   androidOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   androidSelectionBox: { width: '90%', backgroundColor: '#FFF', borderRadius: 25, padding: 20 },
-  absCloseBtn: { position: 'absolute', top: 15, right: 15, zIndex: 10 },
   editTitle: { fontSize: 18, fontWeight: '900', marginBottom: 20, textAlign: 'center' },
   optionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9F9F9', padding: 15, borderRadius: 15, marginBottom: 10, borderWidth: 1, borderColor: '#EEE' },
   optionName: { fontSize: 15, fontWeight: '800' },
