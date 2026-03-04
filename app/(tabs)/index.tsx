@@ -8,7 +8,6 @@ import {
   Keyboard,
   Modal,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -402,7 +401,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
   return (
     <View style={styles.cameraTabContainer}>
-      <StatusBar barStyle="dark-content" />
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <View>
@@ -433,7 +431,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             </View>
             <View style={styles.profileStrip}>
               <View style={styles.profileItem}><MaterialCommunityIcons name={gender === 'Male' ? "gender-male" : "gender-female"} size={16} color="#FFF" /><Text style={styles.profileItemText}>{gender.toUpperCase()}</Text></View>
-              <View style={styles.stripDivider} /><View style={styles.profileItem}><MaterialCommunityIcons name="account-clock" size={16} color="#FFF" /><Text style={styles.profileItemText}>{age}yo • {weight}kg</Text></View>
+              <View style={styles.stripDivider} /><View style={styles.profileItem}><MaterialCommunityIcons name="account-clock" size={16} color="#FFF" /><Text style={styles.profileItemText}>{age}yr • {weight}kg</Text></View>
               <View style={styles.editCircle}><Ionicons name="pencil" size={12} color="#1B4D20" /></View>
             </View>
           </TouchableOpacity>

@@ -10,7 +10,6 @@ import {
   Easing,
   Modal,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -133,7 +132,6 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <Text style={styles.title}>AI Food Scanner</Text>
         <View style={styles.headerAccentBar} />

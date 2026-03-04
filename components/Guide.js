@@ -27,7 +27,7 @@ export default function GuideScreen() {
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container]}>
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <Text style={styles.title}>Calorie Guide</Text>
         <View style={styles.headerAccentBar} />

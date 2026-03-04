@@ -56,7 +56,7 @@ export default function Shop() {
   };
 
   return (
-    <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
+    <View style={styles.fullScreen}>
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <Text style={styles.title}>Shop at Amazon</Text>
         <View style={styles.headerAccentBar} />

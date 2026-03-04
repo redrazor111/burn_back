@@ -88,7 +88,7 @@ export default function ScanHistory() {
   };
 
   return (
-    <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
+    <View style={styles.fullScreen}>
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <View style={styles.headerTopRow}>
           <Text style={styles.title}>Meal History</Text>
