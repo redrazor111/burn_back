@@ -3,7 +3,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Camera } from 'expo-camera';
 import React, { ComponentProps, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Easing,
   Keyboard,
@@ -21,6 +20,7 @@ import {
 import {
   checkActivitesQuota,
   checkMealsQuota,
+  checkQuota,
   decrementActivitesQuota,
   decrementMealsQuota,
   incrementActivitesQuota,
@@ -28,7 +28,7 @@ import {
 } from '@/utils/quotaService';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native'; // Added useNavigation
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Local Utilities & Components
@@ -41,7 +41,6 @@ import ScanHistory from '../../components/ScanHistory';
 import Shop from '../../components/Shop';
 import { useSubscriptionStatus } from '../../utils/subscription';
 
-// import { syncAndroidCalories } from '@/utils/syncAndroidCalories';
 import { MAX_ACTIVITIES, MAX_MEALS } from '../../utils/constants';
 
 const Tab = createMaterialTopTabNavigator();
@@ -61,6 +60,7 @@ interface ScanResult {
   id: string;
   productName: string;
   calories: string;
+  isManual: boolean;
 }
 
 interface PendingResult {
@@ -83,12 +83,16 @@ const ACTIVITY_TYPES: { label: string; met: number; icon: MaterialIconName }[] =
 
 function SummaryScreen({ onRecommendationsFound }: any) {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>(); // Initialized navigation
 
   const [targetCalories, setTargetCalories] = useState('2000');
   const [gender, setGender] = useState('Male');
   const [age, setAge] = useState('25');
   const [weight, setWeight] = useState('70');
   const [waterCups, setWaterCups] = useState(0);
+  const [mealQuotaCount, setMealQuotaCount] = useState(0);
+  const [geminiQuotaCount, setGeminiQuotaCount] = useState('OK');
+  const [activityQuotaCount, setActivityQuotaCount] = useState(0); // Added to track activities reactively
 
   const [tempCalories, setTempCalories] = useState('2000');
   const [tempGender, setTempGender] = useState('Male');
@@ -119,6 +123,18 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const isInitialLoadComplete = useRef(false);
   const { isPro } = useSubscriptionStatus();
   const scanLineAnim = useRef(new Animated.Value(0)).current;
+
+  // --- REFRESH LOGIC ---
+  const refreshQuotas = async () => {
+    const [mQ, gQ, aQ] = await Promise.all([
+      checkMealsQuota(),
+      checkQuota(),
+      checkActivitesQuota()
+    ]);
+    setMealQuotaCount(mQ);
+    setGeminiQuotaCount(gQ);
+    setActivityQuotaCount(aQ);
+  };
 
   useEffect(() => {
     const initializeAppData = async () => {
@@ -155,6 +171,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       } catch (e) { console.error(e); } finally { isInitialLoadComplete.current = true; }
       const { status } = await Camera.requestCameraPermissionsAsync();
       setHasPermission(status === 'granted');
+      refreshQuotas();
     };
     initializeAppData();
   }, []);
@@ -189,6 +206,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   // useFocusEffect(React.useCallback(() => { if (isInitialLoadComplete.current) syncWatchData(); }, []));
   useFocusEffect(
     React.useCallback(() => {
+      refreshQuotas();
       const loadFreshData = async () => {
         const savedScans = await AsyncStorage.getItem('@current_day_scans');
         if (savedScans) {
@@ -232,7 +250,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   const handleAddActivity = async () => {
-    // UPDATED: Check activity quota count before saving
     const currentActCount = await checkActivitesQuota();
     if (!isPro && currentActCount >= MAX_ACTIVITIES) {
       setIsLoggingActivity(false); setShowPremium(true); return;
@@ -251,9 +268,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       caloriesBurned: totalBurned
     };
     setActivities([newActivity, ...(activities || [])]);
-
-    // UPDATED: Increment activity quota
     await incrementActivitesQuota();
+    await refreshQuotas(); // Update locks immediately
 
     const existingHistory = await AsyncStorage.getItem('activity_history');
     const historyData = existingHistory ? JSON.parse(existingHistory) : [];
@@ -271,10 +287,16 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     if (!manualFoodName || isNaN(cals)) return;
 
     const uniqueId = Date.now().toString();
-    const newScan: ScanResult = { id: uniqueId, productName: manualFoodName, calories: cals.toString() };
+    const newScan: ScanResult = {
+      id: uniqueId,
+      productName: manualFoodName,
+      calories: cals.toString(),
+      isManual: true
+    };
 
     setScans(prev => [newScan, ...(prev || [])]);
     await incrementMealsQuota();
+    await refreshQuotas(); // Update locks immediately
 
     await saveToHistory(manualFoodName, { id: uniqueId, identifiedProduct: manualFoodName, calories: cals });
 
@@ -291,23 +313,24 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       const filtered = JSON.parse(storedHistory).filter((i: any) => i.id !== id);
       await AsyncStorage.setItem('activity_history', JSON.stringify(filtered));
     }
-
-    // UPDATED: Refund activity quota slot
     await decrementActivitesQuota();
+    await refreshQuotas();
   };
 
   const deleteScan = async (id: string) => {
+    const itemToDelete = scans.find(s => s.id === id);
     const updatedScans = scans.filter(s => s.id !== id);
     setScans(updatedScans);
     await AsyncStorage.setItem(CURRENT_DAY_SCANS_KEY, JSON.stringify(updatedScans));
     await removeFromHistory(id);
-    await decrementMealsQuota();
+    if (itemToDelete && itemToDelete.isManual) {
+      await decrementMealsQuota();
+    }
+    await refreshQuotas();
   };
 
   const handleOpenActivityLogger = async () => {
-    // Check the numeric quota from your service
     const currentActCount = await checkActivitesQuota();
-
     if (!isPro && currentActCount >= MAX_ACTIVITIES) {
       setShowPremium(true);
     } else {
@@ -319,6 +342,15 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     const currentCount = await checkMealsQuota();
     if (!isPro && currentCount >= MAX_MEALS) setShowPremium(true);
     else setIsLoggingFood(true);
+  };
+
+  const handleOpenScanScanner = async () => {
+    const geminiQuotaCount = await checkQuota();
+    if (!isPro && geminiQuotaCount === 'LIMIT_REACHED') {
+      setShowPremium(true);
+    } else {
+      navigation.navigate('Scan');
+    }
   };
 
   // const handleGoogleFitSync = async () => {
@@ -347,7 +379,12 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const confirmSelection = async (option: { name: string; calories: number }) => {
     if (!pendingResult) return;
     const uniqueId = Date.now().toString();
-    const newScan: ScanResult = { id: uniqueId, productName: option.name, calories: option.calories.toString() };
+    const newScan: ScanResult = {
+      id: uniqueId,
+      productName: option.name,
+      calories: option.calories.toString(),
+      isManual: false
+    };
     setScans(prev => [newScan, ...(prev || [])]);
     await saveToHistory(option.name, { id: uniqueId, identifiedProduct: option.name, calories: option.calories });
     setPendingResult(null); setIsEditingSelection(false);
@@ -376,12 +413,12 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             </Text>
           </View>
 
-          {isSyncingWatch && (
+          {/* {isSyncingWatch && (
             <View style={styles.syncIndicator}>
               <ActivityIndicator size="small" color="#2196F3" />
               <Text style={styles.syncText}>Watch Sync</Text>
             </View>
-          )}
+          )} */}
         </View>
       </View>
 
@@ -411,24 +448,60 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           </View>
 
           <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Meals/Drinks</Text></View>
-          <TouchableOpacity style={[styles.logActivityBtn, (!isPro && scans?.length >= MAX_MEALS) && styles.logActivityBtnLocked, { marginTop: 0, marginBottom: 15 }]} onPress={handleOpenFoodLogger}>
-            <MaterialCommunityIcons name={(!isPro && scans?.length >= MAX_MEALS) ? "lock" : "plus-circle"} size={20} color={(!isPro && scans?.length >= MAX_MEALS) ? "#9E9E9E" : "#1B4D20"} />
-            <Text style={styles.logActivityBtnText}>{(!isPro && scans?.length >= MAX_MEALS) ? `Upgrade to log more` : "Log Meals/Drink"}</Text>
-          </TouchableOpacity>
+
+          <View style={styles.btnActionRow}>
+            <TouchableOpacity
+              style={[styles.halfBtn, (!isPro && mealQuotaCount >= MAX_MEALS) && styles.logActivityBtnLocked]}
+              onPress={handleOpenFoodLogger}
+            >
+              <MaterialCommunityIcons
+                name={(!isPro && mealQuotaCount >= MAX_MEALS) ? "lock" : "plus-circle"}
+                size={18}
+                color={(!isPro && mealQuotaCount >= MAX_MEALS) ? "#9E9E9E" : "#1B4D20"}
+              />
+              <Text style={styles.logActivityBtnText} numberOfLines={1}>
+                {(!isPro && mealQuotaCount >= MAX_MEALS) ? `Upgrade to log more` : "Log Meals/Drink"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.halfBtn, (!isPro && geminiQuotaCount === 'LIMIT_REACHED') && styles.logActivityBtnLocked]}
+              onPress={handleOpenScanScanner}
+            >
+              <MaterialCommunityIcons
+                name={(!isPro && geminiQuotaCount === 'LIMIT_REACHED') ? "lock" : "camera"}
+                size={18}
+                color={(!isPro && geminiQuotaCount === 'LIMIT_REACHED') ? "#9E9E9E" : "#1B4D20"}
+              />
+              <Text style={styles.logActivityBtnText}>
+                {(!isPro && geminiQuotaCount === 'LIMIT_REACHED') ? `Upgrade to scan more` : "Scan Meal"}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           {scans?.map((item) => (
             <View key={item.id} style={styles.collapsibleCard}>
               <View style={styles.cardHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <View style={styles.iconPlaceholder}><MaterialCommunityIcons name="food-apple" size={24} color="#1B4D20" /></View>
-                  <View style={styles.headerInfo}><Text style={styles.foodTitle}>{item.productName}</Text><Text style={styles.foodCals}>{item.calories} Calories</Text></View>
+                  <View style={[styles.iconPlaceholder]}>
+                    <MaterialCommunityIcons
+                      name={item.isManual ? "food-apple" : "camera"}
+                      size={24}
+                      color="#1B4D20"
+                    />
+                  </View>
+                  <View style={styles.headerInfo}>
+                    <Text style={styles.foodTitle}>{item.productName}</Text>
+                    <Text style={styles.foodCals}>{item.calories} Calories</Text>
+                  </View>
                 </View>
-                <TouchableOpacity onPress={() => deleteScan(item.id)} style={{ padding: 10 }}><Ionicons name="trash-outline" size={20} color="#FF5252" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => deleteScan(item.id)} style={{ padding: 10 }}>
+                  <Ionicons name="trash-outline" size={20} color="#FF5252" />
+                </TouchableOpacity>
               </View>
             </View>
           ))}
 
-          {/* 4. Activities Section */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Today's Activities</Text>
             {/* <TouchableOpacity onPress={handleGoogleFitSync} style={styles.manualSyncHeaderBtn}>
@@ -451,25 +524,46 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           )} */}
 
           <TouchableOpacity
-            style={[styles.logActivityBtn, (!isPro && activities?.length >= MAX_ACTIVITIES) && styles.logActivityBtnLocked]}
+            style={[styles.logActivityBtn, (!isPro && activityQuotaCount >= MAX_ACTIVITIES) && styles.logActivityBtnLocked]}
             onPress={handleOpenActivityLogger}
           >
             <MaterialCommunityIcons
-              name={(!isPro && activities?.length >= MAX_ACTIVITIES) ? "lock" : "plus-circle"}
+              name={(!isPro && activityQuotaCount >= MAX_ACTIVITIES) ? "lock" : "plus-circle"}
               size={20}
-              color={(!isPro && activities?.length >= MAX_ACTIVITIES) ? "#9E9E9E" : "#1B4D20"}
+              color={(!isPro && activityQuotaCount >= MAX_ACTIVITIES) ? "#9E9E9E" : "#1B4D20"}
             />
             <Text style={styles.logActivityBtnText}>
-              {(!isPro && activities?.length >= MAX_ACTIVITIES) ? `Upgrade to log more` : "Log Exercise/Activity"}
+              {(!isPro && activityQuotaCount >= MAX_ACTIVITIES) ? `Upgrade to log more` : "Log Exercise/Activity"}
             </Text>
           </TouchableOpacity>
 
           {activities?.map((act) => (
-            <View key={act.id} style={styles.activityItem}>
-              <MaterialCommunityIcons name={act.icon as any} size={20} color={act.id.toString().includes('watch') ? "#2196F3" : "#2E7D32"} />
-              <View style={styles.activityInfo}><Text style={styles.activityName}>{act.type}</Text><Text style={styles.activitySubText}>{act.duration > 0 ? `${act.duration} mins` : 'Auto-Synced'}</Text></View>
-              <Text style={styles.activityBurn}>-{act.caloriesBurned} cal</Text>
-              <TouchableOpacity onPress={() => deleteActivity(act.id)}><Ionicons name="trash-outline" size={18} color="#FF5252" /></TouchableOpacity>
+            <View key={act.id} style={styles.collapsibleCard}>
+              <View style={styles.cardHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  <View style={styles.iconPlaceholder}>
+                    <MaterialCommunityIcons
+                      name={act.icon as any}
+                      size={24}
+                      color="#1B4D20"
+                    />
+                  </View>
+
+                  <View style={styles.headerInfo}>
+                    <Text style={styles.foodTitle}>{act.type}</Text>
+                    <Text style={styles.foodCals}>
+                      {act.duration > 0 ? `${act.duration} mins` : 'Auto-Synced'} • {act.caloriesBurned} Burned
+                    </Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => deleteActivity(act.id)}
+                  style={{ padding: 10 }}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#FF5252" />
+                </TouchableOpacity>
+              </View>
             </View>
           ))}
         </ScrollView>
@@ -533,7 +627,16 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>
             <Text style={styles.editTitle}>Log Exercise/Activity</Text>
-            <ScrollView horizontal style={styles.activitySelector}>{ACTIVITY_TYPES.map((act) => (<TouchableOpacity key={act.label} style={[styles.activityTypeBtn, selectedActivity.label === act.label && styles.activityTypeBtnActive]} onPress={() => setSelectedActivity(act)}><MaterialCommunityIcons name={act.icon as any} size={24} color={selectedActivity.label === act.label ? "#FFF" : "#1B4D20"} /><Text style={[styles.activityTypeLabel, selectedActivity.label === act.label && styles.activityTypeLabelActive]}>{act.label}</Text></TouchableOpacity>))}</ScrollView>
+            <View style={{ height: 120, width: '100%', marginBottom: 10 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activitySelector} contentContainerStyle={{ paddingVertical: 10 }}>
+                {ACTIVITY_TYPES.map((act) => (
+                  <TouchableOpacity key={act.label} style={[styles.activityTypeBtn, selectedActivity.label === act.label && styles.activityTypeBtnActive]} onPress={() => setSelectedActivity(act)}>
+                    <MaterialCommunityIcons name={act.icon as any} size={28} color={selectedActivity.label === act.label ? "#FFF" : "#1B4D20"} />
+                    <Text style={[styles.activityTypeLabel, selectedActivity.label === act.label && styles.activityTypeLabelActive]}>{act.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
             <View style={styles.inputGroup}><Text style={styles.inputLabel}>Duration (Minutes)</Text><TextInput style={styles.editInputSmall} value={activityDuration} onChangeText={setActivityDuration} keyboardType="numeric" /></View>
             <View style={styles.editActions}><TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsLoggingActivity(false)}><Text>Cancel</Text></TouchableOpacity><TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={handleAddActivity}><Text style={{ color: '#fff' }}>Add</Text></TouchableOpacity></View>
           </View>
@@ -556,7 +659,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   );
 }
 
-// AppContent and Styles remain identical to your source
 function AppContent() {
   const insets = useSafeAreaInsets();
   const iconMap: Record<string, any> = { Today: 'calendar-outline', Scan: 'camera-outline', Meals: 'fast-food-outline', Cardio: 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
@@ -589,14 +691,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '900',
-    color: '#1B4D20', // <--- Your primary brand green
-    letterSpacing: -1, // Tight tracking looks better with colored titles
+    color: '#1B4D20',
+    letterSpacing: -1,
   },
   headerAccentBar: {
     width: 45,
     height: 4,
     backgroundColor: '#1B4D20',
-    opacity: 0.2, // Making the bar semi-transparent makes the title the star
+    opacity: 0.2,
     borderRadius: 2,
     marginTop: 2,
     marginBottom: 8,
@@ -621,9 +723,28 @@ const styles = StyleSheet.create({
   profileItemText: { color: '#FFF', fontSize: 11, fontWeight: '700', marginLeft: 5 },
   stripDivider: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 5 },
   editCircle: { position: 'absolute', right: 10, backgroundColor: '#FFF', width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center' },
+
+  btnActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+  },
+  halfBtn: {
+    flex: 0.485,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8F5E9',
+    paddingVertical: 12,
+    borderRadius: 15,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
   logActivityBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5E9', marginTop: 15, paddingVertical: 12, borderRadius: 15, borderStyle: 'dashed', borderWidth: 1, borderColor: '#C8E6C9' },
   logActivityBtnLocked: { backgroundColor: '#F5F5F5', borderColor: '#E0E0E0' },
   logActivityBtnText: { color: '#1B4D20', fontWeight: '800', marginLeft: 8 },
+
   activityItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 12, borderRadius: 15, marginBottom: 8, borderWidth: 1, borderColor: '#F0F0F0' },
   activityInfo: { flex: 1, marginLeft: 12 },
   activityName: { fontSize: 14, fontWeight: '800' },
@@ -655,9 +776,9 @@ const styles = StyleSheet.create({
   modalBtn: { flex: 0.48, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
   saveBtn: { backgroundColor: '#1B4D20' },
   activitySelector: { flexDirection: 'row', marginBottom: 20 },
-  activityTypeBtn: { alignItems: 'center', padding: 15, borderRadius: 18, backgroundColor: '#F5F5F5', marginRight: 10, width: 90 },
-  activityTypeBtnActive: { backgroundColor: '#1B4D20' },
-  activityTypeLabel: { fontSize: 10, fontWeight: '800', marginTop: 5, color: '#1B4D20' },
+  activityTypeBtn: { alignItems: 'center', padding: 15, borderRadius: 18, backgroundColor: '#F5F5F5', marginRight: 10, width: 100, height: 100, elevation: 2 },
+  activityTypeBtnActive: { backgroundColor: '#1B4D20', elevation: 4 },
+  activityTypeLabel: { fontSize: 11, fontWeight: '800', marginTop: 8, color: '#1B4D20' },
   activityTypeLabelActive: { color: '#FFF' },
   scrollPadding: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 100 },
   unitSmall: { fontSize: 8, fontWeight: '700', color: '#9E9E9E' },
