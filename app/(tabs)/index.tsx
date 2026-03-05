@@ -40,6 +40,9 @@ import ScanHistory from '../../components/ScanHistory';
 import Shop from '../../components/Shop';
 import { useSubscriptionStatus } from '../../utils/subscription';
 
+import { db, silentSignIn } from '@/utils/firebaseConfig';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
+
 import { MAX_ACTIVITIES, MAX_MEALS } from '../../utils/constants';
 
 const Tab = createMaterialTopTabNavigator();
@@ -82,7 +85,8 @@ const ACTIVITY_TYPES: { label: string; met: number; icon: MaterialIconName }[] =
 
 function SummaryScreen({ onRecommendationsFound }: any) {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<any>(); // Initialized navigation
+  const navigation = useNavigation<any>();
+  const [userId, setUserId] = useState<string | null | undefined>(null);
 
   const [targetCalories, setTargetCalories] = useState('2000');
   const [gender, setGender] = useState('Male');
@@ -91,7 +95,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [waterCups, setWaterCups] = useState(0);
   const [mealQuotaCount, setMealQuotaCount] = useState(0);
   const [geminiQuotaCount, setGeminiQuotaCount] = useState('OK');
-  const [activityQuotaCount, setActivityQuotaCount] = useState(0); // Added to track activities reactively
+  const [activityQuotaCount, setActivityQuotaCount] = useState(0);
 
   const [tempCalories, setTempCalories] = useState('2000');
   const [tempGender, setTempGender] = useState('Male');
@@ -154,18 +158,12 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         const today = new Date().toDateString();
 
         if (lastSavedDate === today) {
-          const [savedScans, savedActs, savedWater] = await Promise.all([
-            AsyncStorage.getItem(CURRENT_DAY_SCANS_KEY),
-            AsyncStorage.getItem(CURRENT_DAY_ACTIVITIES_KEY),
-            AsyncStorage.getItem(CURRENT_DAY_WATER_KEY)
-          ]);
-          setScans(savedScans ? JSON.parse(savedScans) : []);
-          setActivities(savedActs ? JSON.parse(savedActs) : []);
+          const savedWater = await AsyncStorage.getItem(CURRENT_DAY_WATER_KEY);
           setWaterCups(savedWater ? parseInt(savedWater, 10) : 0);
         } else {
-          await AsyncStorage.multiRemove([CURRENT_DAY_SCANS_KEY, CURRENT_DAY_ACTIVITIES_KEY, CURRENT_DAY_WATER_KEY]);
+          await AsyncStorage.multiRemove([CURRENT_DAY_WATER_KEY]);
           await AsyncStorage.setItem(LAST_SAVED_DATE_KEY, today);
-          setScans([]); setActivities([]); setWaterCups(0);
+          setWaterCups(0);
         }
       } catch (e) { console.error(e); } finally { isInitialLoadComplete.current = true; }
       const { status } = await Camera.requestCameraPermissionsAsync();
@@ -174,6 +172,46 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     };
     initializeAppData();
   }, []);
+
+  useEffect(() => {
+    const init = async () => {
+      const uid = await silentSignIn();
+      if (uid) setUserId(uid);
+    };
+    init();
+  }, []);
+
+  // --- FIREBASE REAL-TIME LISTENERS ---
+  useEffect(() => {
+    if (!userId) return;
+
+    // Listen to Meals
+    const mealsQuery = query(collection(db, 'users', userId, 'meals'), orderBy('createdAt', 'desc'));
+    const unsubscribeMeals = onSnapshot(mealsQuery, (snapshot) => {
+      const loadedScans = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as ScanResult[];
+      setScans(loadedScans);
+      AsyncStorage.setItem(CURRENT_DAY_SCANS_KEY, JSON.stringify(loadedScans));
+    });
+
+    // Listen to Activities
+    const activitiesQuery = query(collection(db, 'users', userId, 'activities'), orderBy('createdAt', 'desc'));
+    const unsubscribeActivities = onSnapshot(activitiesQuery, (snapshot) => {
+      const loadedActivities = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setActivities(loadedActivities);
+      AsyncStorage.setItem(CURRENT_DAY_ACTIVITIES_KEY, JSON.stringify(loadedActivities));
+    });
+
+    return () => {
+      unsubscribeMeals();
+      unsubscribeActivities();
+    };
+  }, [userId]);
 
   // const syncWatchData = async () => {
   //   if (isSyncingWatch || !isInitialLoadComplete.current) return;
@@ -203,26 +241,18 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   // };
 
   // useFocusEffect(React.useCallback(() => { if (isInitialLoadComplete.current) syncWatchData(); }, []));
+
   useFocusEffect(
     React.useCallback(() => {
       refreshQuotas();
-      const loadFreshData = async () => {
-        const savedScans = await AsyncStorage.getItem('@current_day_scans');
-        if (savedScans) {
-          setScans(JSON.parse(savedScans));
-        }
-      };
-      loadFreshData();
     }, [])
   );
 
   useEffect(() => {
     if (isInitialLoadComplete.current) {
-      AsyncStorage.setItem(CURRENT_DAY_SCANS_KEY, JSON.stringify(scans || []));
-      AsyncStorage.setItem(CURRENT_DAY_ACTIVITIES_KEY, JSON.stringify(activities || []));
       AsyncStorage.setItem(CURRENT_DAY_WATER_KEY, waterCups.toString());
     }
-  }, [scans, activities, waterCups]);
+  }, [waterCups]);
 
   useEffect(() => {
     if (isLoading) {
@@ -249,6 +279,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   const handleAddActivity = async () => {
+    if (!userId) return;
     const currentActCount = await checkActivitesQuota();
     if (!isPro && currentActCount >= MAX_ACTIVITIES) {
       setIsLoggingActivity(false); setShowPremium(true); return;
@@ -258,74 +289,92 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     if (isNaN(mins) || mins <= 0) return;
     const burnPerMin = (selectedActivity.met * parseFloat(weight) * 3.5) / 200;
     const totalBurned = Math.round(burnPerMin * mins);
-    const newActivity = {
-      id: Date.now().toString(),
-      date: new Date().toISOString(),
-      type: selectedActivity.label,
-      icon: selectedActivity.icon,
-      duration: mins,
-      caloriesBurned: totalBurned
-    };
-    setActivities([newActivity, ...(activities || [])]);
-    await incrementActivitesQuota();
-    await refreshQuotas(); // Update locks immediately
 
-    const existingHistory = await AsyncStorage.getItem('activity_history');
-    const historyData = existingHistory ? JSON.parse(existingHistory) : [];
-    await AsyncStorage.setItem('activity_history', JSON.stringify([newActivity, ...historyData].slice(0, 500)));
-    setIsLoggingActivity(false);
+    try {
+      await addDoc(collection(db, 'users', userId, 'activities'), {
+        type: selectedActivity.label,
+        icon: selectedActivity.icon,
+        duration: mins,
+        caloriesBurned: totalBurned,
+        date: new Date().toISOString(),
+        createdAt: serverTimestamp(),
+      });
+
+      await incrementActivitesQuota();
+      await refreshQuotas();
+      setIsLoggingActivity(false);
+    } catch (e) {
+      console.error("Firebase Activity Add Error:", e);
+    }
   };
 
   const handleManualFoodLog = async () => {
+    if (!userId) return;
+
     const currentCount = await checkMealsQuota();
     if (!isPro && currentCount >= MAX_MEALS) {
-      setIsLoggingFood(false); setShowPremium(true); return;
+      setIsLoggingFood(false);
+      setShowPremium(true);
+      return;
     }
 
     const cals = parseInt(manualFoodCals);
     if (!manualFoodName || isNaN(cals)) return;
 
-    const uniqueId = Date.now().toString();
-    const newScan: ScanResult = {
-      id: uniqueId,
-      productName: manualFoodName,
-      calories: cals.toString(),
-      isManual: true
-    };
+    try {
+      const docRef = await addDoc(collection(db, 'users', userId, 'meals'), {
+        productName: manualFoodName,
+        calories: cals.toString(),
+        isManual: true,
+        date: new Date().toISOString(),
+        createdAt: serverTimestamp(),
+      });
 
-    setScans(prev => [newScan, ...(prev || [])]);
-    await incrementMealsQuota();
-    await refreshQuotas(); // Update locks immediately
+      await incrementMealsQuota();
+      await refreshQuotas();
 
-    await saveToHistory(manualFoodName, { id: uniqueId, identifiedProduct: manualFoodName, calories: cals });
+      await saveToHistory(manualFoodName, {
+        id: docRef.id,
+        identifiedProduct: manualFoodName,
+        calories: cals
+      });
 
-    setIsLoggingFood(false);
-    setManualFoodName(''); setManualFoodCals('');
+      setIsLoggingFood(false);
+      setManualFoodName('');
+      setManualFoodCals('');
+
+    } catch (error) {
+      console.error("Firebase Meal Add Error:", error);
+    }
   };
 
   const deleteActivity = async (id: string) => {
-    const updatedActivities = activities.filter(a => a.id !== id);
-    setActivities(updatedActivities);
-    await AsyncStorage.setItem(CURRENT_DAY_ACTIVITIES_KEY, JSON.stringify(updatedActivities));
-    const storedHistory = await AsyncStorage.getItem('activity_history');
-    if (storedHistory) {
-      const filtered = JSON.parse(storedHistory).filter((i: any) => i.id !== id);
-      await AsyncStorage.setItem('activity_history', JSON.stringify(filtered));
+    if (!userId) return;
+    try {
+      await deleteDoc(doc(db, 'users', userId, 'activities', id));
+      await decrementActivitesQuota();
+      await refreshQuotas();
+    } catch (e) {
+      console.error("Firebase Activity Delete Error:", e);
     }
-    await decrementActivitesQuota();
-    await refreshQuotas();
   };
 
   const deleteScan = async (id: string) => {
+    if (!userId) return;
     const itemToDelete = scans.find(s => s.id === id);
-    const updatedScans = scans.filter(s => s.id !== id);
-    setScans(updatedScans);
-    await AsyncStorage.setItem(CURRENT_DAY_SCANS_KEY, JSON.stringify(updatedScans));
-    await removeFromHistory(id);
-    if (itemToDelete && itemToDelete.isManual) {
-      await decrementMealsQuota();
+
+    try {
+      await deleteDoc(doc(db, 'users', userId, 'meals', id));
+
+      if (itemToDelete && itemToDelete.isManual) {
+        await decrementMealsQuota();
+      }
+
+      await removeFromHistory(id);
+      await refreshQuotas();
+    } catch (error) {
+      console.error("Firebase Meal Delete Error:", error);
     }
-    await refreshQuotas();
   };
 
   const handleOpenActivityLogger = async () => {
@@ -376,17 +425,34 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   // };
 
   const confirmSelection = async (option: { name: string; calories: number }) => {
-    if (!pendingResult) return;
-    const uniqueId = Date.now().toString();
-    const newScan: ScanResult = {
-      id: uniqueId,
-      productName: option.name,
-      calories: option.calories.toString(),
-      isManual: false
-    };
-    setScans(prev => [newScan, ...(prev || [])]);
-    await saveToHistory(option.name, { id: uniqueId, identifiedProduct: option.name, calories: option.calories });
-    setPendingResult(null); setIsEditingSelection(false);
+    if (!pendingResult || !userId) return;
+    try {
+      // 1. Capture the document reference (docRef) from Firebase
+      const docRef = await addDoc(collection(db, 'users', userId, 'meals'), {
+        productName: option.name,
+        calories: option.calories.toString(),
+        isManual: false,
+        date: new Date().toISOString(),
+        createdAt: serverTimestamp(),
+      });
+
+      // 2. Pass docRef.id into saveToHistory to satisfy the type requirement
+      await saveToHistory(option.name, {
+        id: docRef.id, // This is the fix
+        identifiedProduct: option.name,
+        calories: option.calories
+      });
+
+      // 3. Reset UI states
+      setPendingResult(null);
+      setIsEditingSelection(false);
+
+      // Optional: Navigate to Today if you want to redirect after a successful scan
+      navigation.navigate('Today');
+
+    } catch (e) {
+      console.error("Firebase Confirm Selection Error:", e);
+    }
   };
 
   const startEditingOption = (opt: { name: string; calories: number }) => {
@@ -606,7 +672,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         </Modal>
       )}
 
-      {/* MANUAL FOOD LOG MODAL */}
       {isLoggingFood && (
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>

@@ -1,7 +1,7 @@
-
+import { auth, db } from '@/utils/firebaseConfig';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     LayoutAnimation,
@@ -19,8 +19,6 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
     UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const ACTIVITY_HISTORY_KEY = 'activity_history';
-
 export default function ActivityHistory() {
     const insets = useSafeAreaInsets();
     const isFocused = useIsFocused();
@@ -28,24 +26,34 @@ export default function ActivityHistory() {
     const [collapsedSections, setCollapsedSections] = useState({});
 
     useEffect(() => {
-        const loadHistory = async () => {
-            try {
-                const actStored = await AsyncStorage.getItem(ACTIVITY_HISTORY_KEY);
-                const actData = actStored ? JSON.parse(actStored) : [];
+        const user = auth.currentUser;
+        if (!user) return;
 
-                // Smoothly animate the appearance of history
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                setHistory(actData);
+        const q = query(
+            collection(db, 'users', user.uid, 'activities'),
+            orderBy('createdAt', 'desc')
+        );
 
-                // Default sections to collapsed
-                const initialCollapsedState = {};
-                actData.forEach(item => {
-                    initialCollapsedState[getSafeDateKey(item.date)] = true;
-                });
-                setCollapsedSections(initialCollapsedState);
-            } catch (e) { console.error(e); }
-        };
-        if (isFocused) loadHistory();
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const actData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setHistory(actData);
+
+            const initialCollapsedState = {};
+            actData.forEach(item => {
+                initialCollapsedState[getSafeDateKey(item.date)] = true;
+            });
+            setCollapsedSections(prev => Object.keys(prev).length === 0 ? initialCollapsedState : prev);
+
+        }, (error) => {
+            console.error("Firebase History Load Error:", error);
+        });
+
+        return () => unsubscribe();
     }, [isFocused]);
 
     const getSafeDateKey = (dateString) => {
@@ -106,7 +114,7 @@ export default function ActivityHistory() {
                             <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(dateKey)}>
                                 <View style={styles.sectionHeaderTextGroup}>
                                     <Text style={styles.sectionLabel}>{getReadableDate(dateKey).toUpperCase()}</Text>
-                                    <Text style={styles.sectionTotalBurn}>{groupedData[dateKey].totalBurned} cal</Text>
+                                    <Text style={styles.sectionTotalBurned}>{groupedData[dateKey].totalBurned} cal burned</Text>
                                 </View>
                                 <MaterialCommunityIcons name={collapsedSections[dateKey] ? "chevron-down" : "chevron-up"} size={20} color="#9E9E9E" />
                             </TouchableOpacity>
@@ -115,8 +123,8 @@ export default function ActivityHistory() {
                                 <View style={styles.itemsContainer}>
                                     {groupedData[dateKey].items.map((item) => (
                                         <View key={item.id} style={styles.historyCard}>
-                                            <View style={[styles.historyIconBg, { backgroundColor: '#E3F2FD' }]}>
-                                                <MaterialCommunityIcons name={item.icon || "run"} size={26} color="#1976D2" />
+                                            <View style={styles.historyIconBg}>
+                                                <MaterialCommunityIcons name={item.icon || "run"} size={26} color="#1B4D20" />
                                             </View>
                                             <View style={styles.historyDetails}>
                                                 <Text style={styles.historyTime}>
@@ -161,14 +169,14 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 28,
         fontWeight: '900',
-        color: '#1B4D20', // <--- Your primary brand green
-        letterSpacing: -1, // Tight tracking looks better with colored titles
+        color: '#1B4D20',
+        letterSpacing: -1,
     },
     headerAccentBar: {
         width: 45,
         height: 4,
         backgroundColor: '#1B4D20',
-        opacity: 0.2, // Making the bar semi-transparent makes the title the star
+        opacity: 0.2,
         borderRadius: 2,
         marginTop: 2,
         marginBottom: 8,
@@ -180,22 +188,20 @@ const styles = StyleSheet.create({
         textTransform: 'uppercase',
         letterSpacing: 1.2,
     },
-    deleteAllBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF0F0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-    deleteAllText: { color: '#FF5252', fontSize: 11, fontWeight: '800', marginLeft: 4 },
     scrollContentList: { paddingHorizontal: 20, paddingBottom: 40 },
     sectionContainer: { marginTop: 20 },
     sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#EEE' },
     sectionHeaderTextGroup: { flexDirection: 'row', alignItems: 'baseline' },
     sectionLabel: { fontSize: 11, fontWeight: '800', color: '#9E9E9E', letterSpacing: 1 },
-    sectionTotalBurn: { fontSize: 13, fontWeight: '700', color: '#1976D2', marginLeft: 10 },
+    sectionTotalBurned: { fontSize: 13, fontWeight: '700', color: '#1B4D20', marginLeft: 10 },
     historyCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#F5F5F5' },
-    historyIconBg: { width: 50, height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+    historyIconBg: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
     historyDetails: { flex: 1 },
     historyTime: { fontSize: 10, fontWeight: '700', color: '#BDBDBD' },
     activityName: { fontSize: 16, fontWeight: '800', color: '#212529' },
     activityMeta: { fontSize: 12, color: '#9E9E9E', fontWeight: '700' },
-    burnBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
-    burnText: { color: '#2E7D32', fontWeight: '800', fontSize: 13 },
+    burnBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
+    burnText: { color: '#1B4D20', fontWeight: '800', fontSize: 13 },
     placeholderContainer: { alignItems: 'center', marginTop: 100 },
     placeholderText: { color: '#BDBDBD', marginTop: 15, fontSize: 16, fontWeight: '600' }
 });

@@ -1,6 +1,6 @@
 
+
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // ADD THIS
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { Camera } from 'expo-camera';
 import React, { useEffect, useRef, useState } from 'react';
@@ -18,6 +18,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+// Firebase Imports
+import { auth, db } from '@/utils/firebaseConfig';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+
 // Local Utilities & Components
 import { saveToHistory } from '@/utils/historyStorage';
 import { checkQuota, incrementQuota } from '@/utils/quotaService';
@@ -26,16 +30,13 @@ import { useSubscriptionStatus } from '../utils/subscription';
 import PremiumModal from './PremiumModal';
 import Scanner from './Scanner';
 
-// STORAGE KEY MUST MATCH YOUR INDEX.TSX
-const CURRENT_DAY_SCANS_KEY = '@current_day_scans';
-
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { isPro } = useSubscriptionStatus();
   const isFocused = useIsFocused();
 
-  const [hasPermission, setHasPermission] = useState(null);
+  const [hasPermission, setHasPermission] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showPremium, setShowPremium] = useState(false);
 
@@ -91,31 +92,34 @@ export default function CameraScreen() {
   };
 
   const confirmSelection = async (option) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
     try {
-      // 1. Prepare the new meal object
-      const newMeal = {
-        id: Date.now().toString(),
+      // 1. Save to Firebase Firestore
+      const docRef = await addDoc(collection(db, 'users', user.uid, 'meals'), {
         productName: option.name,
         calories: option.calories.toString(),
-      };
+        isManual: false, // Flagged as AI scan
+        date: new Date().toISOString(),
+        createdAt: serverTimestamp(), // For accurate history sorting
+      });
 
-      // 2. Update the Dashboard List (AsyncStorage)
-      const existingScansRaw = await AsyncStorage.getItem(CURRENT_DAY_SCANS_KEY);
-      const existingScans = existingScansRaw ? JSON.parse(existingScansRaw) : [];
-      const updatedScans = [newMeal, ...existingScans];
+      // 2. Save to history using the docRef.id to fix the Type Error
+      await saveToHistory(option.name, {
+        id: docRef.id,
+        identifiedProduct: option.name,
+        calories: option.calories
+      });
 
-      await AsyncStorage.setItem(CURRENT_DAY_SCANS_KEY, JSON.stringify(updatedScans));
-
-      // 3. Save to global history utility
-      await saveToHistory(option.name, { identifiedProduct: option.name, calories: option.calories });
-
-      // Reset states
+      // 3. Reset states & Navigate
       setPendingResult(null);
       setIsEditingSelection(false);
-
       navigation.navigate('Today');
+
     } catch (e) {
-      console.error("Confirmation Error:", e);
+      console.error("Firebase Confirmation Error:", e);
+      alert("Could not save to the cloud. Check your connection.");
     }
   };
 
@@ -132,6 +136,7 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.container}>
+      {/* UI Code stays identical to yours ... */}
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <Text style={styles.title}>AI Food Scanner</Text>
         <View style={styles.headerAccentBar} />
@@ -167,7 +172,6 @@ export default function CameraScreen() {
         )}
       </View>
 
-      {/* GEMINI RESULTS PROMPT MODAL */}
       {pendingResult && (
         <Modal visible={!!pendingResult} transparent animationType="fade" statusBarTranslucent>
           <View style={styles.androidOverlay}>

@@ -20,7 +20,8 @@
         "CAMERA",
         "BILLING",
         "INTERNET"
-      ]
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       "expo-router",
@@ -53,7 +54,8 @@
             "minSdkVersion": 26
           }
         }
-      ]
+      ],
+      "@react-native-firebase/auth"
     ],
     "experiments": {
       "typedRoutes": true,

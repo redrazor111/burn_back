@@ -1,7 +1,7 @@
-
+import { auth, db } from '@/utils/firebaseConfig';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   LayoutAnimation,
@@ -19,8 +19,6 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const SCAN_HISTORY_KEY = 'scan_history';
-
 export default function ScanHistory() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
@@ -28,26 +26,34 @@ export default function ScanHistory() {
   const [collapsedSections, setCollapsedSections] = useState({});
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const storedScans = await AsyncStorage.getItem(SCAN_HISTORY_KEY);
-        if (storedScans) {
-          const parsed = JSON.parse(storedScans);
-          const historyData = Array.isArray(parsed) ? parsed : [];
+    const user = auth.currentUser;
+    if (!user) return;
 
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setHistory(historyData);
+    const q = query(
+      collection(db, 'users', user.uid, 'meals'),
+      orderBy('createdAt', 'desc')
+    );
 
-          // Default sections to collapsed
-          const initialCollapsedState = {};
-          historyData.forEach(item => {
-            initialCollapsedState[getSafeDateKey(item.date)] = true;
-          });
-          setCollapsedSections(initialCollapsedState);
-        }
-      } catch (e) { console.error(e); }
-    };
-    if (isFocused) loadData();
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const historyData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        identifiedProduct: doc.data().productName || doc.data().identifiedProduct,
+      }));
+
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setHistory(historyData);
+
+      if (Object.keys(collapsedSections).length === 0) {
+        const initialCollapsedState = {};
+        historyData.forEach(item => {
+          initialCollapsedState[getSafeDateKey(item.date)] = true;
+        });
+        setCollapsedSections(initialCollapsedState);
+      }
+    }, (error) => console.error("Firebase Scan History Error:", error));
+
+    return () => unsubscribe();
   }, [isFocused]);
 
   const getSafeDateKey = (dateString) => {
@@ -63,7 +69,6 @@ export default function ScanHistory() {
       const key = getSafeDateKey(item.date);
       if (!groups[key]) groups[key] = { items: [], totalCalories: 0 };
       groups[key].items.push(item);
-      // Fixed: mapping to the flattened structure from saveToHistory
       groups[key].totalCalories += Number(item.calories || 0);
     });
     return groups;
@@ -119,7 +124,12 @@ export default function ScanHistory() {
                   {groupedData[dateKey].items.map((item) => (
                     <View key={item.id} style={styles.historyCard}>
                       <View style={styles.historyIconBg}>
-                        <MaterialCommunityIcons name="food-apple" size={26} color="#2E7D32" />
+                        {/* Dynamic Icon Selection: Apple for manual, Camera for AI */}
+                        <MaterialCommunityIcons
+                          name={item.isManual ? "food-apple" : "camera"}
+                          size={26}
+                          color="#1B4D20"
+                        />
                       </View>
 
                       <View style={styles.historyDetails}>
@@ -165,14 +175,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '900',
-    color: '#1B4D20', // <--- Your primary brand green
-    letterSpacing: -1, // Tight tracking looks better with colored titles
+    color: '#1B4D20',
+    letterSpacing: -1,
   },
   headerAccentBar: {
     width: 45,
     height: 4,
     backgroundColor: '#1B4D20',
-    opacity: 0.2, // Making the bar semi-transparent makes the title the star
+    opacity: 0.2,
     borderRadius: 2,
     marginTop: 2,
     marginBottom: 8,
@@ -184,21 +194,19 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1.2,
   },
-  deleteAllBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF0F0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  deleteAllText: { color: '#FF5252', fontSize: 11, fontWeight: '800', marginLeft: 4 },
   scrollContentList: { paddingHorizontal: 20, paddingBottom: 40 },
   sectionContainer: { marginTop: 20 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   sectionHeaderTextGroup: { flexDirection: 'row', alignItems: 'baseline' },
   sectionLabel: { fontSize: 11, fontWeight: '800', color: '#9E9E9E', letterSpacing: 1 },
-  sectionTotalCalories: { fontSize: 13, fontWeight: '700', color: '#2E7D32', marginLeft: 10 },
+  sectionTotalCalories: { fontSize: 13, fontWeight: '700', color: '#1B4D20', marginLeft: 10 },
   historyCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#F5F5F5' },
   historyIconBg: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   historyDetails: { flex: 1 },
   historyTime: { fontSize: 10, fontWeight: '700', color: '#BDBDBD' },
   historyFoodName: { fontSize: 16, fontWeight: '800', color: '#212529' },
   calorieBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
-  calorieText: { color: '#2E7D32', fontWeight: '800', fontSize: 13 },
+  calorieText: { color: '#1B4D20', fontWeight: '800', fontSize: 13 },
   placeholderContainer: { alignItems: 'center', marginTop: 100 },
   placeholderText: { color: '#BDBDBD', marginTop: 15, fontSize: 16, fontWeight: '600' }
 });

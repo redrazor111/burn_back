@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Purchases from 'react-native-purchases';
-import { GOOGLE_API_KEY_IN_RC, MAX_ACTIVITIES, MAX_MEALS, MAX_SEARCHES } from '../utils/constants';
+import { GOOGLE_API_KEY_IN_RC, MAX_ACTIVITIES, MAX_SEARCHES } from '../utils/constants';
 
 export default function PremiumModal({ visible, onClose }) {
   const [packageToBuy, setPackageToBuy] = useState(null);
@@ -74,13 +74,12 @@ export default function PremiumModal({ visible, onClose }) {
 
           <Text style={styles.title}>Unlock BurnBack Premium</Text>
           <Text style={styles.description}>
-            You have reached your <Text style={styles.boldText}>{MAX_SEARCHES}</Text> daily scans or  or <Text style={styles.boldText}>{MAX_MEALS}</Text> logging meals or <Text style={styles.boldText}>{MAX_ACTIVITIES}</Text> logging activity. Upgrade to Premium for the following features:
+            You have reached your <Text style={styles.boldText}>{MAX_SEARCHES}</Text> daily scans or <Text style={styles.boldText}>{MAX_ACTIVITIES}</Text> logging activity. Upgrade to Premium for the following features:
           </Text>
 
           <View style={styles.featureList}>
             {[
               "Unlimited Scans",
-              "Log Unlimited Daily Meals",
               "Log Unlimited Daily Activities",
               "Sync to Health Apps"
             ].map((feature, index) => (
