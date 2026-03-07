@@ -1,14 +1,35 @@
 // utils/quotaService.ts
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { doc, getDoc, increment, setDoc } from 'firebase/firestore';
 import { MAX_SEARCHES } from './constants';
+import { db, silentSignIn } from './firebaseConfig';
+
+const getProfileDoc = async () => {
+  const userId = await silentSignIn();
+  if (!userId) return null;
+  return doc(db, 'users', userId, 'profile', 'data');
+};
+
+export const getGeminiCount = async (): Promise<number> => {
+  const userRef = await getProfileDoc();
+  if (!userRef) return 0;
+
+  const docSnap = await getDoc(userRef);
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    const today = new Date().toDateString();
+    return data.lastSavedDate === today ? (data.geminiCount || 0) : 0;
+  }
+  return 0;
+};
 
 export const checkQuota = async () => {
-  const today = new Date().toISOString().split('T')[0];
-  const storedData = await AsyncStorage.getItem('gemini_quota');
+  const userRef = await getProfileDoc();
+  if (!userRef) return 'OK';
 
-  if (storedData) {
-    const parsed = JSON.parse(storedData);
-    if (parsed.date === today && parsed.count >= MAX_SEARCHES) {
+  const docSnap = await getDoc(userRef);
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    if (data.lastSavedDate === new Date().toDateString() && (data.geminiCount || 0) >= MAX_SEARCHES) {
       return 'LIMIT_REACHED';
     }
   }
@@ -16,82 +37,52 @@ export const checkQuota = async () => {
 };
 
 export const incrementQuota = async () => {
-  const today = new Date().toISOString().split('T')[0];
-  const storedData = await AsyncStorage.getItem('gemini_quota');
-  let count = 0;
-
-  if (storedData) {
-    const parsed = JSON.parse(storedData);
-    if (parsed.date === today) count = parsed.count;
-  }
-
-  await AsyncStorage.setItem('gemini_quota', JSON.stringify({ date: today, count: count + 1 }));
+  const userRef = await getProfileDoc();
+  if (userRef) await setDoc(userRef, { geminiCount: increment(1) }, { merge: true });
 };
 
 export const checkMealsQuota = async () => {
-  const today = new Date().toISOString().split('T')[0];
-  const storedData = await AsyncStorage.getItem('meals_quota');
-
-  if (storedData) {
-    const parsed = JSON.parse(storedData);
-    // If it's a new day, return 0 (reset)
-    if (parsed.date !== today) return 0;
-    return parsed.count;
+  const userRef = await getProfileDoc();
+  if (!userRef) return 0;
+  const docSnap = await getDoc(userRef);
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    return data.lastSavedDate === new Date().toDateString() ? (data.mealsCount || 0) : 0;
   }
   return 0;
 };
 
 export const incrementMealsQuota = async () => {
-  const today = new Date().toISOString().split('T')[0];
-  const currentCount = await checkMealsQuota();
-
-  const newData = { date: today, count: currentCount + 1 };
-  await AsyncStorage.setItem('meals_quota', JSON.stringify(newData));
-  return newData.count;
+  const userRef = await getProfileDoc();
+  if (userRef) await setDoc(userRef, { mealsCount: increment(1) }, { merge: true });
+  return 0;
 };
 
 export const decrementMealsQuota = async () => {
-  const today = new Date().toISOString().split('T')[0];
-  const currentCount = await checkMealsQuota();
-
-  if (currentCount > 0) {
-    const newData = { date: today, count: currentCount - 1 };
-    await AsyncStorage.setItem('meals_quota', JSON.stringify(newData));
-    return newData.count;
-  }
+  const userRef = await getProfileDoc();
+  if (userRef) await setDoc(userRef, { mealsCount: increment(-1) }, { merge: true });
   return 0;
 };
 
 export const checkActivitesQuota = async () => {
-  const today = new Date().toISOString().split('T')[0];
-  const storedData = await AsyncStorage.getItem('activities_quota');
-
-  if (storedData) {
-    const parsed = JSON.parse(storedData);
-    // If it's a new day, return 0 (reset)
-    if (parsed.date !== today) return 0;
-    return parsed.count;
+  const userRef = await getProfileDoc();
+  if (!userRef) return 0;
+  const docSnap = await getDoc(userRef);
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    return data.lastSavedDate === new Date().toDateString() ? (data.activitiesCount || 0) : 0;
   }
   return 0;
 };
 
 export const incrementActivitesQuota = async () => {
-  const today = new Date().toISOString().split('T')[0];
-  const currentCount = await checkActivitesQuota();
-
-  const newData = { date: today, count: currentCount + 1 };
-  await AsyncStorage.setItem('activities_quota', JSON.stringify(newData));
-  return newData.count;
+  const userRef = await getProfileDoc();
+  if (userRef) await setDoc(userRef, { activitiesCount: increment(1) }, { merge: true });
+  return 0;
 };
 
 export const decrementActivitesQuota = async () => {
-  const today = new Date().toISOString().split('T')[0];
-  const currentCount = await checkActivitesQuota();
-
-  if (currentCount > 0) {
-    const newData = { date: today, count: currentCount - 1 };
-    await AsyncStorage.setItem('activities_quota', JSON.stringify(newData));
-    return newData.count;
-  }
+  const userRef = await getProfileDoc();
+  if (userRef) await setDoc(userRef, { activitiesCount: increment(-1) }, { merge: true });
   return 0;
 };

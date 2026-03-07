@@ -1,35 +1,40 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const HISTORY_KEY = 'scan_history';
+import { deleteDoc, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { db, silentSignIn } from './firebaseConfig';
 
 interface ScanHistoryData {
   id: string;
   identifiedProduct: string;
   calories: number;
   date?: string;
+  isManual?: boolean; // 1. Added optional boolean to the interface
 }
 
 export const removeFromHistory = async (id: string) => {
   try {
-    const existing = await AsyncStorage.getItem(HISTORY_KEY);
-    if (!existing) return;
-    const history = JSON.parse(existing);
-    const filtered = history.filter((item: any) => item.id !== id);
-    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
+    const userId = await silentSignIn();
+    if (!userId) return;
+    await deleteDoc(doc(db, 'users', userId, 'meals', id));
   } catch (e) {
-    console.error("Error deleting from history storage:", e);
+    console.error("Error deleting from Firebase history:", e);
   }
 };
 
 export const saveToHistory = async (name: string, data: ScanHistoryData) => {
-  const existing = await AsyncStorage.getItem('scan_history');
-  const history = existing ? JSON.parse(existing) : [];
+  try {
+    const userId = await silentSignIn();
+    if (!userId) return;
 
-  const newEntry = {
-    ...data,
-    id: data.id || Date.now().toString(), // Use passed ID or fallback
-    date: new Date().toISOString(),
-  };
+    const mealId = data.id || Date.now().toString();
 
-  await AsyncStorage.setItem('scan_history', JSON.stringify([newEntry, ...history]));
+    await setDoc(doc(db, 'users', userId, 'meals', mealId), {
+      productName: name,
+      calories: data.calories.toString(),
+      isManual: data.isManual ?? false,
+      date: data.date || new Date().toISOString(),
+      createdAt: serverTimestamp(),
+    }, { merge: true });
+
+  } catch (e) {
+    console.error("Error saving to Firebase history:", e);
+  }
 };

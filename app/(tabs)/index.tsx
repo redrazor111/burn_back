@@ -1,5 +1,4 @@
 /* eslint-disable react/no-unescaped-entities */
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Camera } from 'expo-camera';
 import React, { ComponentProps, useEffect, useRef, useState } from 'react';
 import {
@@ -15,22 +14,20 @@ import {
   View
 } from 'react-native';
 
-// Integrated both Meals and Activities quota methods
 import {
   checkActivitesQuota,
   checkMealsQuota,
   checkQuota,
-  decrementActivitesQuota,
   decrementMealsQuota,
+  getGeminiCount,
   incrementActivitesQuota,
   incrementMealsQuota
 } from '@/utils/quotaService';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
-import { useFocusEffect, useNavigation } from '@react-navigation/native'; // Added useNavigation
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Local Utilities & Components
 import { removeFromHistory, saveToHistory } from '@/utils/historyStorage';
 import ActivityHistory from '../../components/ActivityHistory';
 import CameraScreen from '../../components/CameraScreen';
@@ -41,20 +38,11 @@ import Shop from '../../components/Shop';
 import { useSubscriptionStatus } from '../../utils/subscription';
 
 import { db, silentSignIn } from '@/utils/firebaseConfig';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 
-import { MAX_ACTIVITIES, MAX_MEALS } from '../../utils/constants';
+import { MAX_ACTIVITIES, MAX_MEALS, MAX_SEARCHES } from '../../utils/constants';
 
 const Tab = createMaterialTopTabNavigator();
-
-const TARGET_CALORIE_KEY = '@daily_target_calories';
-const CURRENT_DAY_SCANS_KEY = '@current_day_scans';
-const CURRENT_DAY_ACTIVITIES_KEY = '@current_day_activities';
-const CURRENT_DAY_WATER_KEY = '@current_day_water';
-const LAST_SAVED_DATE_KEY = '@last_saved_date';
-const USER_GENDER_KEY = '@user_gender';
-const USER_AGE_KEY = '@user_age';
-const USER_WEIGHT_KEY = '@user_weight';
 
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -95,6 +83,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [waterCups, setWaterCups] = useState(0);
   const [mealQuotaCount, setMealQuotaCount] = useState(0);
   const [geminiQuotaCount, setGeminiQuotaCount] = useState('OK');
+  const [geminiCount, setGeminiCount] = useState(0);
   const [activityQuotaCount, setActivityQuotaCount] = useState(0);
 
   const [tempCalories, setTempCalories] = useState('2000');
@@ -114,7 +103,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [scans, setScans] = useState<ScanResult[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSyncingWatch, setIsSyncingWatch] = useState(false);
   const [pendingResult, setPendingResult] = useState<PendingResult | null>(null);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [showPremium, setShowPremium] = useState(false);
@@ -127,132 +115,114 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const { isPro } = useSubscriptionStatus();
   const scanLineAnim = useRef(new Animated.Value(0)).current;
 
-  // --- REFRESH LOGIC ---
   const refreshQuotas = async () => {
-    const [mQ, gQ, aQ] = await Promise.all([
+    const [mQ, gStatus, aQ, gCount] = await Promise.all([
       checkMealsQuota(),
       checkQuota(),
-      checkActivitesQuota()
+      checkActivitesQuota(),
+      getGeminiCount()
     ]);
+
     setMealQuotaCount(mQ);
-    setGeminiQuotaCount(gQ);
+    setGeminiCount(gCount);
     setActivityQuotaCount(aQ);
+    setGeminiQuotaCount(gStatus);
   };
 
+  // Find this block in your code (around line 140) and replace it with this:
   useEffect(() => {
-    const initializeAppData = async () => {
-      try {
-        const [savedTarget, savedGender, savedAge, savedWeight, lastSavedDate] = await Promise.all([
-          AsyncStorage.getItem(TARGET_CALORIE_KEY),
-          AsyncStorage.getItem(USER_GENDER_KEY),
-          AsyncStorage.getItem(USER_AGE_KEY),
-          AsyncStorage.getItem(USER_WEIGHT_KEY),
-          AsyncStorage.getItem(LAST_SAVED_DATE_KEY)
-        ]);
-
-        if (savedTarget) { setTargetCalories(savedTarget); setTempCalories(savedTarget); }
-        if (savedGender) { setGender(savedGender); setTempGender(savedGender); }
-        if (savedAge) { setAge(savedAge); setTempAge(savedAge); }
-        if (savedWeight) { setWeight(savedWeight); setTempWeight(savedWeight); }
-
+    const init = async () => {
+      const uid = await silentSignIn();
+      if (uid) {
+        setUserId(uid);
+        const userRef = doc(db, 'users', uid, 'profile', 'data');
+        const docSnap = await getDoc(userRef);
         const today = new Date().toDateString();
 
-        if (lastSavedDate === today) {
-          const savedWater = await AsyncStorage.getItem(CURRENT_DAY_WATER_KEY);
-          setWaterCups(savedWater ? parseInt(savedWater, 10) : 0);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.lastSavedDate !== today) {
+            // New day: Reset all local counters and update the date
+            await setDoc(userRef, {
+              lastSavedDate: today,
+              waterCups: 0,
+              geminiCount: 0,
+              mealsCount: 0,
+              activitiesCount: 0
+            }, { merge: true });
+          }
         } else {
-          await AsyncStorage.multiRemove([CURRENT_DAY_WATER_KEY]);
-          await AsyncStorage.setItem(LAST_SAVED_DATE_KEY, today);
-          setWaterCups(0);
+          // New profile: Initialize counters
+          await setDoc(userRef, {
+            lastSavedDate: today,
+            waterCups: 0,
+            geminiCount: 0,
+            mealsCount: 0,
+            activitiesCount: 0
+          }, { merge: true });
         }
-      } catch (e) { console.error(e); } finally { isInitialLoadComplete.current = true; }
+      }
+      isInitialLoadComplete.current = true;
       const { status } = await Camera.requestCameraPermissionsAsync();
       setHasPermission(status === 'granted');
       refreshQuotas();
     };
-    initializeAppData();
-  }, []);
-
-  useEffect(() => {
-    const init = async () => {
-      const uid = await silentSignIn();
-      if (uid) setUserId(uid);
-    };
     init();
   }, []);
 
-  // --- FIREBASE REAL-TIME LISTENERS ---
   useEffect(() => {
     if (!userId) return;
 
-    // Listen to Meals
-    const mealsQuery = query(collection(db, 'users', userId, 'meals'), orderBy('createdAt', 'desc'));
-    const unsubscribeMeals = onSnapshot(mealsQuery, (snapshot) => {
-      const loadedScans = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ScanResult[];
-      setScans(loadedScans);
-      AsyncStorage.setItem(CURRENT_DAY_SCANS_KEY, JSON.stringify(loadedScans));
+    // 1. Get the start of "today"
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    // 2. Listen to Profile Data
+    const unsubscribeProfile = onSnapshot(doc(db, 'users', userId, 'profile', 'data'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setTargetCalories(data.targetCalories || '2000');
+        setGender(data.gender || 'Male');
+        setAge(data.age || '25');
+        setWeight(data.weight || '70');
+        setWaterCups(data.waterCups || 0);
+        setTempCalories(data.targetCalories || '2000');
+        setTempGender(data.gender || 'Male');
+        setTempAge(data.age || '25');
+        setTempWeight(data.weight || '70');
+      }
     });
 
-    // Listen to Activities
-    const activitiesQuery = query(collection(db, 'users', userId, 'activities'), orderBy('createdAt', 'desc'));
+    const mealsQuery = query(
+      collection(db, 'users', userId, 'meals'),
+      where('createdAt', '>=', startOfToday),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribeMeals = onSnapshot(mealsQuery, (snapshot) => {
+      const loadedScans = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as ScanResult[];
+      setScans(loadedScans);
+    }, (error) => console.error("Meals Listener Error:", error));
+
+    const activitiesQuery = query(
+      collection(db, 'users', userId, 'activities'),
+      where('createdAt', '>=', startOfToday),
+      orderBy('createdAt', 'desc')
+    );
+
     const unsubscribeActivities = onSnapshot(activitiesQuery, (snapshot) => {
-      const loadedActivities = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const loadedActivities = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setActivities(loadedActivities);
-      AsyncStorage.setItem(CURRENT_DAY_ACTIVITIES_KEY, JSON.stringify(loadedActivities));
-    });
+    }, (error) => console.error("Activities Listener Error:", error));
 
     return () => {
+      unsubscribeProfile();
       unsubscribeMeals();
       unsubscribeActivities();
     };
   }, [userId]);
 
-  // const syncWatchData = async () => {
-  //   if (isSyncingWatch || !isInitialLoadComplete.current) return;
-  //   setIsSyncingWatch(true);
-  //   try {
-  //     const watchCalories = await syncAndroidCalories();
-  //     if (watchCalories > 0) {
-  //       const todayStr = new Date().toDateString();
-  //       const syncId = `watch-${todayStr}`;
-  //       const watchEntry = {
-  //         id: syncId,
-  //         date: new Date().toISOString(),
-  //         type: 'Other',
-  //         icon: 'dots-horizontal',
-  //         duration: 0,
-  //         caloriesBurned: watchCalories
-  //       };
-  //       setActivities(prev => [watchEntry, ...prev.filter(a => a.id !== syncId)]);
-  //       const existingHistory = await AsyncStorage.getItem('activity_history');
-  //       let historyData = existingHistory ? JSON.parse(existingHistory) : [];
-  //       historyData = [watchEntry, ...historyData.filter((a: any) => a.id !== syncId)].slice(0, 500);
-  //       await AsyncStorage.setItem('activity_history', JSON.stringify(historyData));
-  //     }
-  //   } catch (e) { console.error("Watch sync failed", e); } finally {
-  //     setTimeout(() => setIsSyncingWatch(false), 2000);
-  //   }
-  // };
-
-  // useFocusEffect(React.useCallback(() => { if (isInitialLoadComplete.current) syncWatchData(); }, []));
-
-  useFocusEffect(
-    React.useCallback(() => {
-      refreshQuotas();
-    }, [])
-  );
-
-  useEffect(() => {
-    if (isInitialLoadComplete.current) {
-      AsyncStorage.setItem(CURRENT_DAY_WATER_KEY, waterCups.toString());
-    }
-  }, [waterCups]);
+  useFocusEffect(React.useCallback(() => { refreshQuotas(); }, []));
 
   useEffect(() => {
     if (isLoading) {
@@ -267,14 +237,24 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
   const saveProfileData = async () => {
     try {
-      setTargetCalories(tempCalories); setGender(tempGender); setAge(tempAge); setWeight(tempWeight);
-      await Promise.all([
-        AsyncStorage.setItem(TARGET_CALORIE_KEY, tempCalories),
-        AsyncStorage.setItem(USER_GENDER_KEY, tempGender),
-        AsyncStorage.setItem(USER_AGE_KEY, tempAge),
-        AsyncStorage.setItem(USER_WEIGHT_KEY, tempWeight),
-      ]);
+      if (userId) {
+        await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
+          targetCalories: tempCalories,
+          gender: tempGender,
+          age: tempAge,
+          weight: tempWeight,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
       setIsEditingTarget(false); Keyboard.dismiss();
+    } catch (e) { console.error("Error saving profile:", e); }
+  };
+
+  const adjustWater = async (amount: number) => {
+    if (!userId) return;
+    const newCount = Math.max(0, waterCups + amount);
+    try {
+      await setDoc(doc(db, 'users', userId, 'profile', 'data'), { waterCups: newCount }, { merge: true });
     } catch (e) { console.error(e); }
   };
 
@@ -284,12 +264,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     if (!isPro && currentActCount >= MAX_ACTIVITIES) {
       setIsLoggingActivity(false); setShowPremium(true); return;
     }
-
     const mins = parseInt(activityDuration);
     if (isNaN(mins) || mins <= 0) return;
     const burnPerMin = (selectedActivity.met * parseFloat(weight) * 3.5) / 200;
     const totalBurned = Math.round(burnPerMin * mins);
-
     try {
       await addDoc(collection(db, 'users', userId, 'activities'), {
         type: selectedActivity.label,
@@ -299,28 +277,20 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         date: new Date().toISOString(),
         createdAt: serverTimestamp(),
       });
-
       await incrementActivitesQuota();
       await refreshQuotas();
       setIsLoggingActivity(false);
-    } catch (e) {
-      console.error("Firebase Activity Add Error:", e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const handleManualFoodLog = async () => {
     if (!userId) return;
-
     const currentCount = await checkMealsQuota();
     if (!isPro && currentCount >= MAX_MEALS) {
-      setIsLoggingFood(false);
-      setShowPremium(true);
-      return;
+      setIsLoggingFood(false); setShowPremium(true); return;
     }
-
     const cals = parseInt(manualFoodCals);
     if (!manualFoodName || isNaN(cals)) return;
-
     try {
       const docRef = await addDoc(collection(db, 'users', userId, 'meals'), {
         productName: manualFoodName,
@@ -329,61 +299,41 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         date: new Date().toISOString(),
         createdAt: serverTimestamp(),
       });
-
       await incrementMealsQuota();
       await refreshQuotas();
-
       await saveToHistory(manualFoodName, {
         id: docRef.id,
         identifiedProduct: manualFoodName,
-        calories: cals
+        calories: cals,
+        isManual: true // <-- Make sure this is here!
       });
-
-      setIsLoggingFood(false);
-      setManualFoodName('');
-      setManualFoodCals('');
-
-    } catch (error) {
-      console.error("Firebase Meal Add Error:", error);
-    }
+      setIsLoggingFood(false); setManualFoodName(''); setManualFoodCals('');
+    } catch (error) { console.error(error); }
   };
 
   const deleteActivity = async (id: string) => {
     if (!userId) return;
     try {
       await deleteDoc(doc(db, 'users', userId, 'activities', id));
-      await decrementActivitesQuota();
       await refreshQuotas();
-    } catch (e) {
-      console.error("Firebase Activity Delete Error:", e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const deleteScan = async (id: string) => {
     if (!userId) return;
     const itemToDelete = scans.find(s => s.id === id);
-
     try {
       await deleteDoc(doc(db, 'users', userId, 'meals', id));
-
-      if (itemToDelete && itemToDelete.isManual) {
-        await decrementMealsQuota();
-      }
-
+      if (itemToDelete && itemToDelete.isManual) { await decrementMealsQuota(); }
       await removeFromHistory(id);
       await refreshQuotas();
-    } catch (error) {
-      console.error("Firebase Meal Delete Error:", error);
-    }
+    } catch (error) { console.error(error); }
   };
 
   const handleOpenActivityLogger = async () => {
     const currentActCount = await checkActivitesQuota();
-    if (!isPro && currentActCount >= MAX_ACTIVITIES) {
-      setShowPremium(true);
-    } else {
-      setIsLoggingActivity(true);
-    }
+    if (!isPro && currentActCount >= MAX_ACTIVITIES) setShowPremium(true);
+    else setIsLoggingActivity(true);
   };
 
   const handleOpenFoodLogger = async () => {
@@ -394,40 +344,13 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
   const handleOpenScanScanner = async () => {
     const geminiQuotaCount = await checkQuota();
-    if (!isPro && geminiQuotaCount === 'LIMIT_REACHED') {
-      setShowPremium(true);
-    } else {
-      navigation.navigate('Scan');
-    }
+    if (!isPro && geminiQuotaCount === 'LIMIT_REACHED') setShowPremium(true);
+    else navigation.navigate('Scan');
   };
-
-  // const handleGoogleFitSync = async () => {
-  //   if (isSyncingWatch) return;
-  //   setIsSyncingWatch(true);
-  //   try {
-  //     const watchCalories = await syncAndroidCalories();
-  //     if (watchCalories > 0) {
-  //       const todayStr = new Date().toDateString();
-  //       const syncId = `watch-${todayStr}`;
-  //       const watchEntry = {
-  //         id: syncId, date: new Date().toISOString(), type: 'Google Fit Sync', icon: 'google-fit', duration: 0, caloriesBurned: watchCalories
-  //       };
-  //       const updatedActivities = [watchEntry, ...activities.filter(a => a.id !== syncId)];
-  //       setActivities(updatedActivities);
-  //       await AsyncStorage.setItem(CURRENT_DAY_ACTIVITIES_KEY, JSON.stringify(updatedActivities));
-  //       const existingHistory = await AsyncStorage.getItem('activity_history');
-  //       let historyData = existingHistory ? JSON.parse(existingHistory) : [];
-  //       historyData = [watchEntry, ...historyData.filter((a: any) => a.id !== syncId)].slice(0, 500);
-  //       await AsyncStorage.setItem('activity_history', JSON.stringify(historyData));
-  //       Alert.alert("Sync Complete", `Imported ${watchCalories} calories from Google Fit.`);
-  //     } else { Alert.alert("Sync", "No new active calories found for today in Google Fit."); }
-  //   } catch (e) { console.error("Manual sync failed", e); } finally { setIsSyncingWatch(false); }
-  // };
 
   const confirmSelection = async (option: { name: string; calories: number }) => {
     if (!pendingResult || !userId) return;
     try {
-      // 1. Capture the document reference (docRef) from Firebase
       const docRef = await addDoc(collection(db, 'users', userId, 'meals'), {
         productName: option.name,
         calories: option.calories.toString(),
@@ -435,31 +358,20 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         date: new Date().toISOString(),
         createdAt: serverTimestamp(),
       });
-
-      // 2. Pass docRef.id into saveToHistory to satisfy the type requirement
       await saveToHistory(option.name, {
-        id: docRef.id, // This is the fix
+        id: docRef.id,
         identifiedProduct: option.name,
-        calories: option.calories
+        calories: option.calories,
+        isManual: false
       });
-
-      // 3. Reset UI states
-      setPendingResult(null);
-      setIsEditingSelection(false);
-
-      // Optional: Navigate to Today if you want to redirect after a successful scan
+      setPendingResult(null); setIsEditingSelection(false);
       navigation.navigate('Today');
-
-    } catch (e) {
-      console.error("Firebase Confirm Selection Error:", e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const startEditingOption = (opt: { name: string; calories: number }) => {
     setEditName(opt.name); setEditCals(opt.calories.toString()); setIsEditingSelection(true);
   };
-
-  const adjustWater = (amount: number) => setWaterCups(prev => Math.max(0, prev + amount));
 
   const totalConsumed = (scans || []).reduce((sum, s) => sum + Number(s.calories), 0);
   const totalBurned = (activities || []).reduce((sum, a) => sum + a.caloriesBurned, 0);
@@ -472,17 +384,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           <View>
             <Text style={styles.title}>Daily Dashboard</Text>
             <View style={styles.headerAccentBar} />
-            <Text style={styles.subtitle}>
-              {age}yr {gender} • {weight}kg Profile Active
-            </Text>
+            <Text style={styles.subtitle}>{age}yr {gender} • {weight}kg Profile Active</Text>
           </View>
-
-          {/* {isSyncingWatch && (
-            <View style={styles.syncIndicator}>
-              <ActivityIndicator size="small" color="#2196F3" />
-              <Text style={styles.syncText}>Watch Sync</Text>
-            </View>
-          )} */}
         </View>
       </View>
 
@@ -514,32 +417,44 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Meals/Drinks</Text></View>
 
           <View style={styles.btnActionRow}>
-            <TouchableOpacity
-              style={[styles.halfBtn, (!isPro && mealQuotaCount >= MAX_MEALS) && styles.logActivityBtnLocked]}
-              onPress={handleOpenFoodLogger}
-            >
-              <MaterialCommunityIcons
-                name={(!isPro && mealQuotaCount >= MAX_MEALS) ? "lock" : "plus-circle"}
-                size={18}
-                color={(!isPro && mealQuotaCount >= MAX_MEALS) ? "#9E9E9E" : "#1B4D20"}
-              />
-              <Text style={styles.logActivityBtnText} numberOfLines={1}>
-                {(!isPro && mealQuotaCount >= MAX_MEALS) ? `Upgrade to log more` : "Log Meals/Drink"}
-              </Text>
+            <TouchableOpacity style={[styles.halfBtn, (!isPro && mealQuotaCount >= MAX_MEALS) && styles.logActivityBtnLocked]} onPress={handleOpenFoodLogger}>
+              <MaterialCommunityIcons name={(!isPro && mealQuotaCount >= MAX_MEALS) ? "lock" : "plus-circle"} size={18} color={(!isPro && mealQuotaCount >= MAX_MEALS) ? "#9E9E9E" : "#1B4D20"} />
+              <Text style={styles.logActivityBtnText} numberOfLines={1}>{(!isPro && mealQuotaCount >= MAX_MEALS) ? `Upgrade to Premium` : "Log Meals/Drink"}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.halfBtn, (!isPro && geminiQuotaCount === 'LIMIT_REACHED') && styles.logActivityBtnLocked]}
+              style={[
+                styles.halfBtn,
+                styles.columnBtn,
+                (!isPro && geminiCount >= MAX_SEARCHES) && styles.logActivityBtnLocked
+              ]}
               onPress={handleOpenScanScanner}
             >
-              <MaterialCommunityIcons
-                name={(!isPro && geminiQuotaCount === 'LIMIT_REACHED') ? "lock" : "camera"}
-                size={18}
-                color={(!isPro && geminiQuotaCount === 'LIMIT_REACHED') ? "#9E9E9E" : "#1B4D20"}
-              />
-              <Text style={styles.logActivityBtnText}>
-                {(!isPro && geminiQuotaCount === 'LIMIT_REACHED') ? `Upgrade to scan more` : "Scan Meal"}
-              </Text>
+              <View style={styles.btnMainContent}>
+                <MaterialCommunityIcons
+                  name={(!isPro && geminiCount >= MAX_SEARCHES) ? "lock" : "camera"}
+                  size={18}
+                  color={(!isPro && geminiCount >= MAX_SEARCHES) ? "#9E9E9E" : "#1B4D20"}
+                />
+                <Text style={styles.logActivityBtnText}>
+                  {(!isPro && geminiCount >= MAX_SEARCHES)
+                    ? "Upgrade to Premium"
+                    : `Scan Meal (${MAX_SEARCHES - Number(geminiCount || 0)} left)`}
+                </Text>
+              </View>
+              {!isPro && (
+                <View style={styles.quotaBarWrapper}>
+                  <View
+                    style={[
+                      styles.quotaBarFill,
+                      {
+                        width: `${Math.min(100, (Number(geminiCount || 0) / MAX_SEARCHES) * 100)}%`,
+                        backgroundColor: geminiCount >= MAX_SEARCHES ? '#FF5252' : '#4CAF50'
+                      }
+                    ]}
+                  />
+                </View>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -547,86 +462,55 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             <View key={item.id} style={styles.collapsibleCard}>
               <View style={styles.cardHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <View style={[styles.iconPlaceholder]}>
-                    <MaterialCommunityIcons
-                      name={item.isManual ? "food-apple" : "camera"}
-                      size={24}
-                      color="#1B4D20"
-                    />
-                  </View>
-                  <View style={styles.headerInfo}>
-                    <Text style={styles.foodTitle}>{item.productName}</Text>
-                    <Text style={styles.foodCals}>{item.calories} Calories</Text>
-                  </View>
+                  <View style={styles.iconPlaceholder}><MaterialCommunityIcons name={item.isManual ? "food-apple" : "camera"} size={24} color="#1B4D20" /></View>
+                  <View style={styles.headerInfo}><Text style={styles.foodTitle}>{item.productName}</Text><Text style={styles.foodCals}>{item.calories} Calories</Text></View>
                 </View>
-                <TouchableOpacity onPress={() => deleteScan(item.id)} style={{ padding: 10 }}>
-                  <Ionicons name="trash-outline" size={20} color="#FF5252" />
-                </TouchableOpacity>
+                <TouchableOpacity onPress={() => deleteScan(item.id)} style={{ padding: 10 }}><Ionicons name="trash-outline" size={20} color="#FF5252" /></TouchableOpacity>
               </View>
             </View>
           ))}
 
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Today's Activities</Text>
-            {/* <TouchableOpacity onPress={handleGoogleFitSync} style={styles.manualSyncHeaderBtn}>
-              {isSyncingWatch ? <ActivityIndicator size="small" color="#2196F3" /> : <MaterialCommunityIcons name="sync" size={18} color="#2196F3" />}
-            </TouchableOpacity> */}
-          </View>
-
-          {/* Sync Google Fit Button (Visible if no watch sync yet) */}
-          {/* {activities.filter(a => a.id.toString().includes('watch')).length === 0 && (
-            <TouchableOpacity
-              style={styles.googleFitBtn}
-              onPress={handleGoogleFitSync}
-              disabled={isSyncingWatch}
-            >
-              <MaterialCommunityIcons name="google-fit" size={22} color="#FFF" />
-              <Text style={styles.googleFitBtnText}>
-                {isSyncingWatch ? "Syncing..." : "Sync Google Fit Calories"}
-              </Text>
-            </TouchableOpacity>
-          )} */}
+          <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Activities</Text></View>
 
           <TouchableOpacity
-            style={[styles.logActivityBtn, (!isPro && activityQuotaCount >= MAX_ACTIVITIES) && styles.logActivityBtnLocked]}
+            style={[styles.logActivityBtn, styles.activityBtnColumn, (!isPro && activityQuotaCount >= MAX_ACTIVITIES) && styles.logActivityBtnLocked]}
             onPress={handleOpenActivityLogger}
           >
-            <MaterialCommunityIcons
-              name={(!isPro && activityQuotaCount >= MAX_ACTIVITIES) ? "lock" : "plus-circle"}
-              size={20}
-              color={(!isPro && activityQuotaCount >= MAX_ACTIVITIES) ? "#9E9E9E" : "#1B4D20"}
-            />
-            <Text style={styles.logActivityBtnText}>
-              {(!isPro && activityQuotaCount >= MAX_ACTIVITIES) ? `Upgrade to log more` : "Log Exercise/Activity"}
-            </Text>
+            <View style={styles.btnMainContent}>
+              <MaterialCommunityIcons
+                name={(!isPro && activityQuotaCount >= MAX_ACTIVITIES) ? "lock" : "plus-circle"}
+                size={20}
+                color={(!isPro && activityQuotaCount >= MAX_ACTIVITIES) ? "#9E9E9E" : "#1B4D20"}
+              />
+              <Text style={styles.logActivityBtnText}>
+                {(!isPro && activityQuotaCount >= MAX_ACTIVITIES)
+                  ? `Upgrade to Premium`
+                  : `Log Exercise/Activity (${MAX_ACTIVITIES - Number(activityQuotaCount || 0)} left)`}
+              </Text>
+            </View>
+            {!isPro && (
+              <View style={styles.activityQuotaWrapper}>
+                <View
+                  style={[
+                    styles.quotaBarFill,
+                    {
+                      width: `${Math.min(100, (Number(activityQuotaCount || 0) / MAX_ACTIVITIES) * 100)}%`,
+                      backgroundColor: activityQuotaCount >= MAX_ACTIVITIES ? '#FF5252' : '#4CAF50'
+                    }
+                  ]}
+                />
+              </View>
+            )}
           </TouchableOpacity>
 
           {activities?.map((act) => (
             <View key={act.id} style={styles.collapsibleCard}>
               <View style={styles.cardHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <View style={styles.iconPlaceholder}>
-                    <MaterialCommunityIcons
-                      name={act.icon as any}
-                      size={24}
-                      color="#1B4D20"
-                    />
-                  </View>
-
-                  <View style={styles.headerInfo}>
-                    <Text style={styles.foodTitle}>{act.type}</Text>
-                    <Text style={styles.foodCals}>
-                      {act.duration > 0 ? `${act.duration} mins` : 'Auto-Synced'} • {act.caloriesBurned} Burned
-                    </Text>
-                  </View>
+                  <View style={styles.iconPlaceholder}><MaterialCommunityIcons name={act.icon as any} size={24} color="#1B4D20" /></View>
+                  <View style={styles.headerInfo}><Text style={styles.foodTitle}>{act.type}</Text><Text style={styles.foodCals}>{act.duration > 0 ? `${act.duration} mins` : 'Auto-Synced'} • {act.caloriesBurned} Burned</Text></View>
                 </View>
-
-                <TouchableOpacity
-                  onPress={() => deleteActivity(act.id)}
-                  style={{ padding: 10 }}
-                >
-                  <Ionicons name="trash-outline" size={20} color="#FF5252" />
-                </TouchableOpacity>
+                <TouchableOpacity onPress={() => deleteActivity(act.id)} style={{ padding: 10 }}><Ionicons name="trash-outline" size={20} color="#FF5252" /></TouchableOpacity>
               </View>
             </View>
           ))}
@@ -664,7 +548,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                       ))}
                     </ScrollView>
                   </View>
-                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setPendingResult(null)}><Text style={styles.closeText}>Cancel Scan</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setPendingResult(null)}><Text style={{ color: '#9E9E9E', fontWeight: '800', textAlign: 'center' }}>Cancel Scan</Text></TouchableOpacity>
                 </>
               )}
             </View>
@@ -711,7 +595,11 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           <View style={styles.editBox}>
             <Text style={styles.editTitle}>Edit Profile</Text>
             <View style={styles.inputGroup}><Text style={styles.inputLabel}>Calorie Goal</Text><TextInput style={styles.editInputSmall} value={tempCalories} onChangeText={setTempCalories} keyboardType="numeric" /></View>
-            <View style={styles.row}><View style={[styles.inputGroup, { flex: 2, marginRight: 8 }]}><Text style={styles.inputLabel}>Gender</Text><View style={styles.genderPicker}>{['Male', 'Female'].map(g => (<TouchableOpacity key={g} onPress={() => setTempGender(g)} style={[styles.genderBtn, tempGender === g && styles.genderBtnActive]}><Text style={{ fontSize: 12, color: tempGender === g ? '#1B4D20' : '#999' }}>{g}</Text></TouchableOpacity>))}</View></View><View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}><Text style={styles.inputLabel}>Age</Text><TextInput style={styles.editInputSmall} value={tempAge} onChangeText={setTempAge} keyboardType="numeric" /></View><View style={[styles.inputGroup, { flex: 1.2 }]}><Text style={styles.inputLabel}>Wt (kg)</Text><TextInput style={styles.editInputSmall} value={tempWeight} onChangeText={setTempWeight} keyboardType="numeric" /></View></View>
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 2, marginRight: 8 }]}><Text style={styles.inputLabel}>Gender</Text><View style={styles.genderPicker}>{['Male', 'Female'].map(g => (<TouchableOpacity key={g} onPress={() => setTempGender(g)} style={[styles.genderBtn, tempGender === g && styles.genderBtnActive]}><Text style={{ fontSize: 12, color: tempGender === g ? '#1B4D20' : '#999' }}>{g}</Text></TouchableOpacity>))}</View></View>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}><Text style={styles.inputLabel}>Age</Text><TextInput style={styles.editInputSmall} value={tempAge} onChangeText={setTempAge} keyboardType="numeric" /></View>
+              <View style={[styles.inputGroup, { flex: 1.2 }]}><Text style={styles.inputLabel}>Wt (kg)</Text><TextInput style={styles.editInputSmall} value={tempWeight} onChangeText={setTempWeight} keyboardType="numeric" /></View>
+            </View>
             <View style={styles.editActions}><TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsEditingTarget(false)}><Text>Cancel</Text></TouchableOpacity><TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={saveProfileData}><Text style={{ color: '#fff' }}>Save</Text></TouchableOpacity></View>
           </View>
         </View>
@@ -724,14 +612,14 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
 function AppContent() {
   const insets = useSafeAreaInsets();
-  const iconMap: Record<string, any> = { Today: 'calendar-outline', Scan: 'camera-outline', Meals: 'fast-food-outline', Cardio: 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
+  const iconMap: Record<string, any> = { Today: 'calendar-outline', Scan: 'camera-outline', Intake: 'fast-food-outline', Burned: 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       <Tab.Navigator tabBarPosition="bottom" screenOptions={({ route }) => ({ tabBarActiveTintColor: '#1B4D20', tabBarInactiveTintColor: '#9E9E9E', tabBarLabelStyle: { fontSize: 10, fontWeight: '700', textTransform: 'none' }, tabBarStyle: { height: 75 + insets.bottom, paddingBottom: insets.bottom }, tabBarIcon: ({ color, focused }) => { const baseIconName = iconMap[route.name] || 'help-circle-outline'; const finalIconName = focused ? baseIconName.replace('-outline', '') : baseIconName; return <Ionicons name={finalIconName as any} size={24} color={color} />; }, })}>
         <Tab.Screen name="Today">{() => <SummaryScreen />}</Tab.Screen>
         <Tab.Screen name="Scan">{() => <CameraScreen />}</Tab.Screen>
-        <Tab.Screen name="Meals">{() => <ScanHistory />}</Tab.Screen>
-        <Tab.Screen name="Cardio">{() => <ActivityHistory />}</Tab.Screen>
+        <Tab.Screen name="Intake">{() => <ScanHistory />}</Tab.Screen>
+        <Tab.Screen name="Burned">{() => <ActivityHistory />}</Tab.Screen>
         <Tab.Screen name="Guide">{() => <Guide />}</Tab.Screen>
         <Tab.Screen name="Shop">{() => <Shop />}</Tab.Screen>
       </Tab.Navigator>
@@ -743,38 +631,10 @@ export default function App() { return <SafeAreaProvider><AppContent /></SafeAre
 
 const styles = StyleSheet.create({
   cameraTabContainer: { flex: 1, backgroundColor: '#FBFBFB' },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    backgroundColor: '#fff',
-    elevation: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#1B4D20',
-    letterSpacing: -1,
-  },
-  headerAccentBar: {
-    width: 45,
-    height: 4,
-    backgroundColor: '#1B4D20',
-    opacity: 0.2,
-    borderRadius: 2,
-    marginTop: 2,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-  },
-  syncIndicator: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E3F2FD', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  syncText: { fontSize: 10, fontWeight: '800', color: '#2196F3', marginLeft: 5, textTransform: 'uppercase' },
+  header: { paddingHorizontal: 20, paddingBottom: 20, backgroundColor: '#fff', elevation: 4, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  title: { fontSize: 28, fontWeight: '900', color: '#1B4D20', letterSpacing: -1 },
+  headerAccentBar: { width: 45, height: 4, backgroundColor: '#1B4D20', opacity: 0.2, borderRadius: 2, marginTop: 2, marginBottom: 8 },
+  subtitle: { fontSize: 12, color: '#666', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.2 },
   mainTargetBadge: { backgroundColor: '#FFFFFF', borderRadius: 30, marginTop: 20, elevation: 8, shadowOpacity: 0.1, shadowRadius: 10, borderWidth: 1, borderColor: '#F0F0F0', overflow: 'hidden' },
   targetSplitRow: { flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'center', padding: 18 },
   targetColumn: { alignItems: 'center', flex: 1 },
@@ -786,33 +646,11 @@ const styles = StyleSheet.create({
   profileItemText: { color: '#FFF', fontSize: 11, fontWeight: '700', marginLeft: 5 },
   stripDivider: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 5 },
   editCircle: { position: 'absolute', right: 10, backgroundColor: '#FFF', width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center' },
-
-  btnActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 15,
-  },
-  halfBtn: {
-    flex: 0.485,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#E8F5E9',
-    paddingVertical: 12,
-    borderRadius: 15,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    borderColor: '#C8E6C9',
-  },
+  btnActionRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+  halfBtn: { flex: 0.485, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5E9', paddingVertical: 12, borderRadius: 15, borderStyle: 'dashed', borderWidth: 1, borderColor: '#C8E6C9' },
   logActivityBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5E9', marginTop: 15, paddingVertical: 12, borderRadius: 15, borderStyle: 'dashed', borderWidth: 1, borderColor: '#C8E6C9' },
   logActivityBtnLocked: { backgroundColor: '#F5F5F5', borderColor: '#E0E0E0' },
   logActivityBtnText: { color: '#1B4D20', fontWeight: '800', marginLeft: 8 },
-
-  activityItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 12, borderRadius: 15, marginBottom: 8, borderWidth: 1, borderColor: '#F0F0F0' },
-  activityInfo: { flex: 1, marginLeft: 12 },
-  activityName: { fontSize: 14, fontWeight: '800' },
-  activitySubText: { fontSize: 11, color: '#9E9E9E', fontWeight: '600' },
-  activityBurn: { fontSize: 15, fontWeight: '900', color: '#2E7D32', marginRight: 10 },
   waterTrackerContainer: { backgroundColor: '#FFF', borderRadius: 20, padding: 15, marginTop: 15, borderWidth: 1, borderColor: '#F2F2F2' },
   waterHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   waterTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: '#1A1A1A', marginLeft: 8 },
@@ -853,30 +691,51 @@ const styles = StyleSheet.create({
   optionCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F5F5F5', padding: 16, borderRadius: 15, marginBottom: 10, borderWidth: 1, borderColor: '#E0E0E0' },
   optionName: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
   optionCal: { fontSize: 14, color: '#2E7D32', fontWeight: '700', marginTop: 2 },
-  closeText: { color: '#9E9E9E', fontWeight: '800', textAlign: 'center' },
   row: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', width: '100%' },
-  absCloseBtn: { position: 'absolute', top: 15, right: 15, zIndex: 10, padding: 5 },
+  absCloseBtn: { position: 'absolute', right: 15, top: 15, zIndex: 10, padding: 5 },
   androidOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   androidSelectionBox: { width: '94%', maxHeight: '90%', backgroundColor: '#FFF', borderRadius: 20, padding: 20, elevation: 50 },
-  googleFitBtn: {
+  columnBtn: {
+    flexDirection: 'column', // Stack the text/icon and the bar
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  btnMainContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4285F4', // Google Blue
-    paddingVertical: 14,
-    borderRadius: 15,
-    marginBottom: 10,
-    elevation: 2,
+    marginBottom: 6,
   },
-  googleFitBtnText: {
-    color: '#FFF',
+  quotaBarWrapper: {
+    width: '85%',
+    height: 4,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 2,
+    position: 'relative',
+    marginTop: 4,
+  },
+  quotaBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  quotaCountText: {
+    fontSize: 8,
     fontWeight: '800',
-    marginLeft: 10,
-    fontSize: 14,
+    color: '#9E9E9E',
+    textAlign: 'center',
+    marginTop: 4,
+    textTransform: 'uppercase',
   },
-  manualSyncHeaderBtn: {
-    padding: 5,
-    borderRadius: 20,
-    backgroundColor: '#E3F2FD',
+  activityBtnColumn: {
+    flexDirection: 'column',
+    paddingVertical: 12,
+    height: 65, // Slightly taller to accommodate the bar
   },
+  activityQuotaWrapper: {
+    width: '90%',
+    height: 4,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    borderRadius: 2,
+    marginTop: 8,
+    overflow: 'hidden',
+  }
 });
