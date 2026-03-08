@@ -5,8 +5,10 @@ interface ScanHistoryData {
   id: string;
   identifiedProduct: string;
   calories: number;
+  protein: number;
+  carbs: number;
   date?: string;
-  isManual?: boolean; // 1. Added optional boolean to the interface
+  isManual?: boolean;
 }
 
 export const removeFromHistory = async (id: string) => {
@@ -29,6 +31,8 @@ export const saveToHistory = async (name: string, data: ScanHistoryData) => {
     await setDoc(doc(db, 'users', userId, 'meals', mealId), {
       productName: name,
       calories: data.calories.toString(),
+      protein: data.protein.toString(),
+      carbs:data.carbs.toString(),
       isManual: data.isManual ?? false,
       date: data.date || new Date().toISOString(),
       createdAt: serverTimestamp(),

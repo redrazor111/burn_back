@@ -28,22 +28,15 @@ export const analyzeImageWithGemini = async (
   } catch (error: any) {
     console.error("Frontend Service Error:", error);
 
-    const errorMsg = "Service temporarily unavailable.";
-
-    // Updated fallback to match your 10 activity structure
     return JSON.stringify({
-      identifiedProduct: "Analysis Failed",
-      activity1: { status: "UNSAFE", summary: errorMsg },
-      activity2: { status: "UNSAFE", summary: errorMsg },
-      activity3: { status: "UNSAFE", summary: errorMsg },
-      activity4: { status: "UNSAFE", summary: errorMsg },
-      activity5: { status: "UNSAFE", summary: errorMsg },
-      activity6: { status: "UNSAFE", summary: errorMsg },
-      activity7: { status: "UNSAFE", summary: errorMsg },
-      activity8: { status: "UNSAFE", summary: errorMsg },
-      activity9: { status: "UNSAFE", summary: errorMsg },
-      activity10: { status: "UNSAFE", summary: errorMsg },
-      recommendations: []
+      identifiedOptions: [
+        {
+          name: "Service unavailable - Please retry",
+          calories: 0,
+          protein: 0,
+          carbs: 0
+        }
+      ]
     });
   }
 };

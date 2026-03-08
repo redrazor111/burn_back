@@ -3,7 +3,6 @@ import { Camera } from 'expo-camera';
 import React, { ComponentProps, useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Easing,
   Keyboard,
   Modal,
   ScrollView,
@@ -50,11 +49,13 @@ interface ScanResult {
   id: string;
   productName: string;
   calories: string;
+  carbs?: number;
+  protein?: number;
   isManual: boolean;
 }
 
 interface PendingResult {
-  options: { name: string; calories: number }[];
+  options: { name: string; calories: number, protein: number, carbs: number }[];
   rawResult: any;
 }
 
@@ -99,6 +100,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [activityDuration, setActivityDuration] = useState('30');
   const [manualFoodName, setManualFoodName] = useState('');
   const [manualFoodCals, setManualFoodCals] = useState('');
+  const [manualFoodProtein, setManualFoodProtein] = useState('');
+  const [manualFoodCarbs, setManualFoodCarbs] = useState('');
 
   const [scans, setScans] = useState<ScanResult[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
@@ -112,6 +115,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [isEditingSelection, setIsEditingSelection] = useState(false);
   const [editName, setEditName] = useState('');
   const [editCals, setEditCals] = useState('');
+  const [editProtein, setEditProtein] = useState('');
+  const [editCarbs, setEditCarbs] = useState('');
 
   const isInitialLoadComplete = useRef(false);
   const { isPro } = useSubscriptionStatus();
@@ -131,7 +136,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     setGeminiQuotaCount(gStatus);
   };
 
-  // Find this block in your code (around line 140) and replace it with this:
   useEffect(() => {
     const init = async () => {
       const uid = await silentSignIn();
@@ -144,7 +148,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         if (docSnap.exists()) {
           const data = docSnap.data();
           if (data.lastSavedDate !== today) {
-            // New day: Reset all local counters and update the date
             await setDoc(userRef, {
               lastSavedDate: today,
               waterCups: 0,
@@ -154,7 +157,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             }, { merge: true });
           }
         } else {
-          // New profile: Initialize counters
           await setDoc(userRef, {
             lastSavedDate: today,
             waterCups: 0,
@@ -175,11 +177,9 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   useEffect(() => {
     if (!userId) return;
 
-    // 1. Get the start of "today"
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
-    // 2. Listen to Profile Data
     const unsubscribeProfile = onSnapshot(doc(db, 'users', userId, 'profile', 'data'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -225,17 +225,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   }, [userId]);
 
   useFocusEffect(React.useCallback(() => { refreshQuotas(); }, []));
-
-  useEffect(() => {
-    if (isLoading) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(scanLineAnim, { toValue: 1, duration: 2000, easing: Easing.linear, useNativeDriver: true }),
-          Animated.timing(scanLineAnim, { toValue: 0, duration: 2000, easing: Easing.linear, useNativeDriver: true }),
-        ])
-      ).start();
-    } else { scanLineAnim.stopAnimation(); }
-  }, [isLoading]);
 
   const saveProfileData = async () => {
     try {
@@ -292,11 +281,16 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       setIsLoggingFood(false); setShowPremium(true); return;
     }
     const cals = parseInt(manualFoodCals);
+    const protein = parseInt(manualFoodProtein) || 0;
+    const carbs = parseInt(manualFoodCarbs) || 0;
+
     if (!manualFoodName || isNaN(cals)) return;
     try {
       const docRef = await addDoc(collection(db, 'users', userId, 'meals'), {
         productName: manualFoodName,
         calories: cals.toString(),
+        protein: protein,
+        carbs: carbs,
         isManual: true,
         date: new Date().toISOString(),
         createdAt: serverTimestamp(),
@@ -307,9 +301,15 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         id: docRef.id,
         identifiedProduct: manualFoodName,
         calories: cals,
-        isManual: true // <-- Make sure this is here!
+        protein: protein,
+        carbs: carbs,
+        isManual: true
       });
-      setIsLoggingFood(false); setManualFoodName(''); setManualFoodCals('');
+      setIsLoggingFood(false);
+      setManualFoodName('');
+      setManualFoodCals('');
+      setManualFoodProtein('');
+      setManualFoodCarbs('');
     } catch (error) { console.error(error); }
   };
 
@@ -350,12 +350,14 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     else navigation.navigate('AI Scan');
   };
 
-  const confirmSelection = async (option: { name: string; calories: number }) => {
+  const confirmSelection = async (option: { name: string; calories: number; protein: number; carbs: number }) => {
     if (!pendingResult || !userId) return;
     try {
       const docRef = await addDoc(collection(db, 'users', userId, 'meals'), {
         productName: option.name,
         calories: option.calories.toString(),
+        protein: option.protein.toString(),
+        carbs: option.carbs.toString(),
         isManual: false,
         date: new Date().toISOString(),
         createdAt: serverTimestamp(),
@@ -364,6 +366,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         id: docRef.id,
         identifiedProduct: option.name,
         calories: option.calories,
+        protein: option.protein,
+        carbs: option.carbs,
         isManual: false
       });
       setPendingResult(null); setIsEditingSelection(false);
@@ -376,6 +380,9 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   const totalConsumed = (scans || []).reduce((sum, s) => sum + Number(s.calories), 0);
+  const totalProteinGrams = (scans || []).reduce((sum, s) => sum + Number(s.protein || 0), 0);
+  const totalCarbsGrams = (scans || []).reduce((sum, s) => sum + Number(s.carbs || 0), 0);
+
   const totalBurned = (activities || []).reduce((sum, a) => sum + a.caloriesBurned, 0);
   const remainingCalories = Math.max(Number(targetCalories) - totalConsumed + totalBurned, 0);
 
@@ -399,20 +406,30 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
       <View style={{ flex: 1 }}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollPadding}>
-          <TouchableOpacity style={styles.mainTargetBadge} activeOpacity={0.9} onPress={() => { setTempCalories(targetCalories); setTempGender(gender); setTempAge(age); setTempWeight(weight); setIsEditingTarget(true); }}>
+
+          <TouchableOpacity style={styles.mainTargetBadge} activeOpacity={0.9} onPress={() => setIsEditingTarget(true)}>
             <View style={styles.targetSplitRow}>
               <View style={styles.targetColumn}><Text style={styles.targetLabel}>Goal</Text><Text style={styles.targetValue}>{targetCalories}<Text style={styles.unitSmall}> CAL</Text></Text></View>
               <View style={styles.verticalDivider} /><View style={styles.targetColumn}><Text style={styles.targetLabel}>Intake</Text><Text style={styles.targetValue}>{totalConsumed}<Text style={styles.unitSmall}> CAL</Text></Text></View>
               <View style={styles.verticalDivider} /><View style={styles.targetColumn}><Text style={styles.targetLabel}>Burned</Text><Text style={[styles.targetValue, { color: '#1976D2' }]}>{totalBurned}<Text style={styles.unitSmall}> CAL</Text></Text></View>
               <View style={styles.verticalDivider} /><View style={styles.targetColumn}><Text style={styles.targetLabel}>Left</Text><Text style={[styles.targetValue, { color: remainingCalories <= 200 ? '#FF5252' : '#1B4D20' }]}>{remainingCalories}<Text style={styles.unitSmall}> CAL</Text></Text></View>
             </View>
+
+            <View style={styles.macroSummaryRow}>
+              <Text style={styles.macroSummaryText}>TOTAL: <Text style={{ fontWeight: '900' }}>{totalConsumed}cal</Text></Text>
+              <View style={styles.dotSeparator} />
+              <Text style={styles.macroSummaryText}>PROTEIN: <Text style={{ fontWeight: '900' }}>{totalProteinGrams}g</Text></Text>
+              <View style={styles.dotSeparator} />
+              <Text style={styles.macroSummaryText}>CARBS: <Text style={{ fontWeight: '900' }}>{totalCarbsGrams}g</Text></Text>
+            </View>
+
             <View style={styles.profileStrip}>
-              <View style={styles.profileItem}><MaterialCommunityIcons name={gender === 'Male' ? "gender-male" : "gender-female"} size={16} color="#FFF" /><Text style={styles.profileItemText}>{gender.toUpperCase()}</Text></View>
-              <View style={styles.stripDivider} /><View style={styles.profileItem}><MaterialCommunityIcons name="account-clock" size={16} color="#FFF" /><Text style={styles.profileItemText}>{age}yr • {weight}kg</Text></View>
-              <View style={styles.editCircle}><Ionicons name="pencil" size={12} color="#1B4D20" /></View>
+              <View style={styles.profileItem}><MaterialCommunityIcons name={gender === 'Male' ? "gender-male" : "gender-female"} size={14} color="#FFF" /><Text style={styles.profileItemText}>{gender.toUpperCase()}</Text></View>
+              <View style={styles.stripDivider} /><View style={styles.profileItem}><MaterialCommunityIcons name="account-clock" size={14} color="#FFF" /><Text style={styles.profileItemText}>{age}yr • {weight}kg</Text></View>
             </View>
           </TouchableOpacity>
 
+          {/* Water Tracker */}
           <View style={styles.waterTrackerContainer}>
             <View style={styles.waterHeader}><MaterialCommunityIcons name="water" size={20} color="#2196F3" /><Text style={styles.waterTitle}>Daily Water Intake</Text><Text style={styles.waterCount}>{waterCups} <Text style={{ fontSize: 12, color: '#999' }}>cups</Text></Text></View>
             <View style={styles.waterControls}>
@@ -427,13 +444,13 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           <View style={styles.btnActionRow}>
             <TouchableOpacity style={[styles.halfBtn, (!isPro && mealQuotaCount >= MAX_MEALS) && styles.logActivityBtnLocked]} onPress={handleOpenFoodLogger}>
               <MaterialCommunityIcons name={(!isPro && mealQuotaCount >= MAX_MEALS) ? "lock" : "plus-circle"} size={18} color={(!isPro && mealQuotaCount >= MAX_MEALS) ? "#9E9E9E" : "#1B4D20"} />
-              <Text style={styles.logActivityBtnText} numberOfLines={1}>{(!isPro && mealQuotaCount >= MAX_MEALS) ? `Upgrade to Premium` : "Log Meals/Drink"}</Text>
+              <Text style={styles.logActivityBtnText} numberOfLines={1}>{(!isPro && mealQuotaCount >= MAX_MEALS) ? `Upgrade` : "Log Meals"}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[
                 styles.halfBtn,
-                styles.columnBtn,
+                styles.columnBtn, // This is the stacked container
                 (!isPro && geminiCount >= MAX_SEARCHES) && styles.logActivityBtnLocked
               ]}
               onPress={handleOpenScanScanner}
@@ -471,13 +488,27 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               <View style={styles.cardHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                   <View style={styles.iconPlaceholder}><MaterialCommunityIcons name={item.isManual ? "food-apple" : "camera"} size={24} color="#1B4D20" /></View>
-                  <View style={styles.headerInfo}><Text style={styles.foodTitle}>{item.productName}</Text><Text style={styles.foodCals}>{item.calories} Calories</Text></View>
+                  <View style={styles.headerInfo}>
+                    <Text style={styles.foodTitle}>{item.productName}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                      <Text style={styles.foodCals}>Calories: {item.calories || 0}</Text>
+                      {(item.protein !== undefined || item.carbs !== undefined) && (
+                        <>
+                          <View style={styles.miniDot} />
+                          <Text style={styles.foodCals}>Protein: {(item.protein || 0)}g</Text>
+                          <View style={styles.miniDot} />
+                          <Text style={styles.foodCals}>Carbs: {(item.carbs || 0)}g</Text>
+                        </>
+                      )}
+                    </View>
+                  </View>
                 </View>
                 <TouchableOpacity onPress={() => deleteScan(item.id)} style={{ padding: 10 }}><Ionicons name="trash-outline" size={20} color="#FF5252" /></TouchableOpacity>
               </View>
             </View>
           ))}
 
+          {/* Activities Section */}
           <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Activities</Text></View>
 
           <TouchableOpacity
@@ -503,7 +534,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               <View style={styles.cardHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                   <View style={styles.iconPlaceholder}><MaterialCommunityIcons name={act.icon as any} size={24} color="#1B4D20" /></View>
-                  <View style={styles.headerInfo}><Text style={styles.foodTitle}>{act.type}</Text><Text style={styles.foodCals}>{act.duration > 0 ? `${act.duration} mins` : 'Auto-Synced'} • {act.caloriesBurned} Burned</Text></View>
+                  <View style={styles.headerInfo}><Text style={styles.foodTitle}>{act.type}</Text><Text style={styles.foodCals}>{act.duration > 0 ? `${act.duration} mins` : 'Auto'} • {act.caloriesBurned} cal Burned</Text></View>
                 </View>
                 <TouchableOpacity onPress={() => deleteActivity(act.id)} style={{ padding: 10 }}><Ionicons name="trash-outline" size={20} color="#FF5252" /></TouchableOpacity>
               </View>
@@ -523,9 +554,11 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 <View style={{ width: '100%', padding: 10 }}>
                   <View style={styles.inputGroup}><Text style={styles.inputLabel}>Food Name</Text><TextInput style={[styles.editInputSmall, { textAlign: 'left' }]} value={editName} onChangeText={setEditName} /></View>
                   <View style={styles.inputGroup}><Text style={styles.inputLabel}>Calories</Text><TextInput style={styles.editInputSmall} value={editCals} onChangeText={setEditCals} keyboardType="numeric" /></View>
+                  <View style={styles.inputGroup}><Text style={styles.inputLabel}>Protein</Text><TextInput style={styles.editInputSmall} value={editProtein} onChangeText={setEditProtein} keyboardType="numeric" /></View>
+                  <View style={styles.inputGroup}><Text style={styles.inputLabel}>Carbs</Text><TextInput style={styles.editInputSmall} value={editCarbs} onChangeText={setEditCarbs} keyboardType="numeric" /></View>
                   <View style={styles.editActions}>
                     <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsEditingSelection(false)}><Text>Back</Text></TouchableOpacity>
-                    <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={() => confirmSelection({ name: editName, calories: parseInt(editCals) || 0 })}><Text style={{ color: '#fff' }}>Add Meal</Text></TouchableOpacity>
+                    <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={() => confirmSelection({ name: editName, calories: parseInt(editCals) || 0, protein: parseInt(editProtein) || 0, carbs: parseInt(editCarbs) || 0 })}><Text style={{ color: '#fff' }}>Add Meal</Text></TouchableOpacity>
                   </View>
                 </View>
               ) : (
@@ -555,11 +588,58 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>
             <Text style={styles.editTitle}>Log Meals/Drink</Text>
-            <View style={styles.inputGroup}><Text style={styles.inputLabel}>Food / Drink Name</Text><TextInput style={[styles.editInputSmall, { textAlign: 'left' }]} value={manualFoodName} onChangeText={setManualFoodName} placeholder="e.g. Protein Shake" /></View>
-            <View style={styles.inputGroup}><Text style={styles.inputLabel}>Calories</Text><TextInput style={styles.editInputSmall} value={manualFoodCals} onChangeText={setManualFoodCals} keyboardType="numeric" placeholder="0" /></View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Food / Drink Name</Text>
+              <TextInput
+                style={[styles.editInputSmall, { textAlign: 'left' }]}
+                value={manualFoodName}
+                onChangeText={setManualFoodName}
+                placeholder="e.g. Protein Shake"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Calories (cal)</Text>
+              <TextInput
+                style={styles.editInputSmall}
+                value={manualFoodCals}
+                onChangeText={setManualFoodCals}
+                keyboardType="numeric"
+                placeholder="0"
+              />
+            </View>
+
+            {/* NEW ROW FOR MACROS */}
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.inputLabel}>Protein (g)</Text>
+                <TextInput
+                  style={styles.editInputSmall}
+                  value={manualFoodProtein}
+                  onChangeText={setManualFoodProtein}
+                  keyboardType="numeric"
+                  placeholder="0"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <Text style={styles.inputLabel}>Carbs (g)</Text>
+                <TextInput
+                  style={styles.editInputSmall}
+                  value={manualFoodCarbs}
+                  onChangeText={setManualFoodCarbs}
+                  keyboardType="numeric"
+                  placeholder="0"
+                />
+              </View>
+            </View>
             <View style={styles.editActions}>
-              <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsLoggingFood(false)}><Text>Cancel</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={handleManualFoodLog}><Text style={{ color: '#fff' }}>Add</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsLoggingFood(false)}>
+                <Text>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={handleManualFoodLog}>
+                <Text style={{ color: '#fff' }}>Add Meal</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -646,6 +726,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   );
 }
 
+// Tab Navigator and Styles remain unchanged as per your original logic
 function AppContent() {
   const insets = useSafeAreaInsets();
   const iconMap: Record<string, any> = { Today: 'calendar-outline', "AI Scan": 'camera-outline', "Calories Intake": 'fast-food-outline', "Calories Burned": 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
@@ -732,52 +813,38 @@ const styles = StyleSheet.create({
   absCloseBtn: { position: 'absolute', right: 15, top: 15, zIndex: 10, padding: 5 },
   androidOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   androidSelectionBox: { width: '94%', maxHeight: '90%', backgroundColor: '#FFF', borderRadius: 20, padding: 20, elevation: 50 },
-  columnBtn: {
-    flexDirection: 'column', // Stack the text/icon and the bar
+ columnBtn: {
+    flexDirection: 'column', // Ensures vertical stacking
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 10,
+    paddingHorizontal: 5,
   },
   btnMainContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    justifyContent: 'center',
+    marginBottom: 8, // Creates the gap for the bar
   },
   quotaBarWrapper: {
-    width: '85%',
+    width: '80%', // Width of the bar relative to the button
     height: 4,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: 'rgba(0,0,0,0.1)', // Light track
     borderRadius: 2,
-    position: 'relative',
-    marginTop: 4,
+    overflow: 'hidden',
   },
   quotaBarFill: {
     height: '100%',
     borderRadius: 2,
   },
-  quotaCountText: {
-    fontSize: 8,
-    fontWeight: '800',
-    color: '#9E9E9E',
-    textAlign: 'center',
-    marginTop: 4,
-    textTransform: 'uppercase',
-  },
-  activityBtnColumn: {
-    flexDirection: 'column',
-    paddingVertical: 12,
-    height: 65, // Slightly taller to accommodate the bar
-  },
-  activityQuotaWrapper: {
-    width: '90%',
-    height: 4,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    borderRadius: 2,
-    marginTop: 8,
-    overflow: 'hidden',
-  },
+  activityBtnColumn: { flexDirection: 'column', paddingVertical: 12, height: 65 },
   modalContainer: { flex: 1, backgroundColor: '#FFF' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   modalTitle: { fontSize: 24, fontWeight: '900', color: '#1B4D20' },
   bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
   bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  macroSummaryRow: { flexDirection: 'row', backgroundColor: '#F1F8E9', paddingVertical: 6, justifyContent: 'center', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#E8F5E9' },
+  macroSummaryText: { fontSize: 10, color: '#2E7D32', fontWeight: '700', letterSpacing: 0.5 },
+  dotSeparator: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#A5D6A7', marginHorizontal: 12 },
+  miniDot: { width: 2, height: 2, borderRadius: 1, backgroundColor: '#CCC', marginHorizontal: 6 },
 });

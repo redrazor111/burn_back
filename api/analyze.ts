@@ -31,23 +31,31 @@ export default async function handler(req: any, res: any) {
     INSTRUCTIONS:
     1. Analyze the food in the image.
     2. Provide THREE (3) distinct possible interpretations of this meal.
-    3. Include variations in preparation, portion size, or specific ingredients (e.g., 'Grilled Chicken Breast - 200g', 'Fried Chicken Thighs', 'Chicken Salad no dressing', etc.)
-    4. For each, provide a realistic estimated calorie count.
+    3. Include variations in preparation, portion size, or specific ingredients.
+    4. For each option, provide realistic estimates for:
+       - Calories (cal)
+       - Protein (grams)
+       - Carbohydrates (grams)
 
-    Return ONLY this JSON:
+    Return ONLY this JSON structure:
     {
       "identifiedOptions": [
-        {"name": "Option 1", "calories": 0},
-        {"name": "Option 2", "calories": 0},
-        {"name": "Option 3", "calories": 0}
+        {"name": "String", "calories": number, "protein": number, "carbs": number},
+        {"name": "String", "calories": number, "protein": number, "carbs": number},
+        {"name": "String", "calories": number, "protein": number, "carbs": number}
       ]
     }
     `;
 
     const result = await model.generateContent([prompt, imagePart]);
     const text = (await result.response).text();
-    return res.status(200).json(JSON.parse(text));
+
+    // Safety check for parsing
+    const parsedData = JSON.parse(text);
+    return res.status(200).json(parsedData);
+
   } catch (error: any) {
+    console.error("Gemini Error:", error.message);
     return res.status(500).json({ error: error.message });
   }
 }
