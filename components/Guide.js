@@ -5,11 +5,8 @@ import {
   Text,
   View
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function GuideScreen() {
-  const insets = useSafeAreaInsets();
-
   const GuideSection = ({ title, data }) => (
     <View style={styles.guideSection}>
       <Text style={styles.guideSectionTitle}>{title}</Text>
@@ -27,37 +24,30 @@ export default function GuideScreen() {
   );
 
   return (
-    <View style={[styles.container]}>
-      <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-        <Text style={styles.title}>Calorie Guide</Text>
-        <View style={styles.headerAccentBar} />
-        <Text style={styles.subtitle}>RECOMMENDED DAILY INTAKE</Text>
+    <ScrollView contentContainerStyle={styles.scrollPadding} showsVerticalScrollIndicator={false}>
+      <GuideSection
+        title="Women (Moderate Activity)"
+        data={[
+          { age: "19–30 years", cal: "2,000–2,200" },
+          { age: "31–50 years", cal: "2,000" },
+          { age: "51+ years", cal: "1,800" },
+        ]}
+      />
+      <GuideSection
+        title="Men (Moderate Activity)"
+        data={[
+          { age: "19–30 years", cal: "2,600–2,800" },
+          { age: "31–50 years", cal: "2,400–2,600" },
+          { age: "51+ years", cal: "2,200–2,400" },
+        ]}
+      />
+      <View style={styles.infoBox}>
+        <Ionicons name="information-circle-outline" size={20} color="#757575" />
+        <Text style={styles.infoText}>
+          Note: These are general estimates. Exact needs vary based on height, current weight, and metabolic health.
+        </Text>
       </View>
-      <ScrollView contentContainerStyle={styles.scrollPadding} showsVerticalScrollIndicator={false}>
-        <GuideSection
-          title="Women (Moderate Activity)"
-          data={[
-            { age: "19–30 years", cal: "2,000–2,200" },
-            { age: "31–50 years", cal: "2,000" },
-            { age: "51+ years", cal: "1,800" },
-          ]}
-        />
-        <GuideSection
-          title="Men (Moderate Activity)"
-          data={[
-            { age: "19–30 years", cal: "2,600–2,800" },
-            { age: "31–50 years", cal: "2,400–2,600" },
-            { age: "51+ years", cal: "2,200–2,400" },
-          ]}
-        />
-        <View style={styles.infoBox}>
-          <Ionicons name="information-circle-outline" size={20} color="#757575" />
-          <Text style={styles.infoText}>
-            Note: These are general estimates. Exact needs vary based on height, current weight, and metabolic health.
-          </Text>
-        </View>
-      </ScrollView>
-    </View>
+    </ScrollView>
   );
 }
 

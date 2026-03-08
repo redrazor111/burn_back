@@ -1,6 +1,5 @@
 
-
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { Camera } from 'expo-camera';
 import React, { useEffect, useRef, useState } from 'react';
@@ -25,6 +24,7 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 // Local Utilities & Components
 import { saveToHistory } from '@/utils/historyStorage';
 import { checkQuota, incrementQuota } from '@/utils/quotaService';
+import Shop from '../components/Shop';
 import { analyzeImageWithGemini } from '../utils/geminiService';
 import { useSubscriptionStatus } from '../utils/subscription';
 import PremiumModal from './PremiumModal';
@@ -39,6 +39,7 @@ export default function CameraScreen() {
   const [hasPermission, setHasPermission] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showPremium, setShowPremium] = useState(false);
+  const [showShop, setShowShop] = useState(false);
 
   // Prompt/Result States
   const [pendingResult, setPendingResult] = useState(null);
@@ -82,7 +83,6 @@ export default function CameraScreen() {
       const rawResponse = await analyzeImageWithGemini(base64Data, isPro);
       const data = JSON.parse(rawResponse);
       await incrementQuota();
-
       setPendingResult({ options: data.identifiedOptions, rawResult: data });
     } catch (e) {
       console.error("Scan Error:", e);
@@ -96,27 +96,23 @@ export default function CameraScreen() {
     if (!user) return;
 
     try {
-      // 1. Save to Firebase Firestore
       const docRef = await addDoc(collection(db, 'users', user.uid, 'meals'), {
         productName: option.name,
         calories: option.calories.toString(),
-        isManual: false, // Flagged as AI scan
+        isManual: false,
         date: new Date().toISOString(),
-        createdAt: serverTimestamp(), // For accurate history sorting
+        createdAt: serverTimestamp(),
       });
 
-      // 2. Save to history using the docRef.id to fix the Type Error
       await saveToHistory(option.name, {
         id: docRef.id,
         identifiedProduct: option.name,
         calories: option.calories
       });
 
-      // 3. Reset states & Navigate
       setPendingResult(null);
       setIsEditingSelection(false);
       navigation.navigate('Today');
-
     } catch (e) {
       console.error("Firebase Confirmation Error:", e);
       alert("Could not save to the cloud. Check your connection.");
@@ -136,11 +132,18 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.container}>
-      {/* UI Code stays identical to yours ... */}
+      {/* Updated Header to match Activity Layout */}
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-        <Text style={styles.title}>AI Food Scanner</Text>
+        <View style={styles.headerTopRow}>
+          <Text style={styles.title}>AI Scanner</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={() => setShowShop(true)} style={styles.actionBtn}>
+                <MaterialCommunityIcons name="cart-variant" size={28} color="#1B4D20" />
+            </TouchableOpacity>
+          </View>
+        </View>
         <View style={styles.headerAccentBar} />
-        <Text style={styles.subtitle}>ANALYZE NUTRITION INSTANTLY WITH AI</Text>
+        <Text style={styles.subtitle}>ANALYZE NUTRITION INSTANTLY</Text>
       </View>
 
       <View style={styles.cameraContainer}>
@@ -172,12 +175,12 @@ export default function CameraScreen() {
         )}
       </View>
 
+      {/* Result Modal */}
       {pendingResult && (
         <Modal visible={!!pendingResult} transparent animationType="fade" statusBarTranslucent>
           <View style={styles.androidOverlay}>
             <View style={styles.androidSelectionBox}>
               <Text style={styles.editTitle}>{isEditingSelection ? "Adjust Details" : "Select Best Match"}</Text>
-
               {isEditingSelection ? (
                 <View style={{ width: '100%', padding: 10 }}>
                   <View style={styles.inputGroup}>
@@ -202,10 +205,10 @@ export default function CameraScreen() {
                   <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
                     {pendingResult?.options?.map((opt, idx) => (
                       <View key={idx} style={styles.optionCard}>
-                        <TouchableOpacity style={{ flex: 1 }}>
+                        <View style={{ flex: 1 }}>
                           <Text style={styles.optionName}>{opt.name}</Text>
                           <Text style={styles.optionCal}>{opt.calories} cal</Text>
-                        </TouchableOpacity>
+                        </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                           <TouchableOpacity onPress={() => startEditingOption(opt)} style={{ padding: 8 }}>
                             <Ionicons name="pencil" size={20} color="#9E9E9E" />
@@ -227,6 +230,27 @@ export default function CameraScreen() {
         </Modal>
       )}
 
+      {/* SHOP POP-UP MODAL */}
+      <Modal visible={showShop} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowShop(false)}>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
+            <Text style={styles.modalTitle}>Shop at Amazon</Text>
+            <TouchableOpacity onPress={() => setShowShop(false)}>
+              <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Shop />
+          </View>
+          <TouchableOpacity
+            style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]}
+            onPress={() => setShowShop(false)}
+          >
+            <Text style={styles.bottomCloseBtnText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
       <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} />
     </View>
   );
@@ -234,36 +258,13 @@ export default function CameraScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FBFBFB' },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    backgroundColor: '#fff',
-    elevation: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#1B4D20', // <--- Your primary brand green
-    letterSpacing: -1, // Tight tracking looks better with colored titles
-  },
-  headerAccentBar: {
-    width: 45,
-    height: 4,
-    backgroundColor: '#1B4D20',
-    opacity: 0.2, // Making the bar semi-transparent makes the title the star
-    borderRadius: 2,
-    marginTop: 2,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-  },
+  header: { paddingHorizontal: 20, paddingBottom: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
+  actionBtn: { marginLeft: 15 },
+  title: { fontSize: 22, fontWeight: '900', color: '#1B4D20', letterSpacing: -0.5 },
+  headerAccentBar: { width: 45, height: 4, backgroundColor: '#1B4D20', opacity: 0.2, borderRadius: 2, marginTop: 4, marginBottom: 15 },
+  subtitle: { fontSize: 10, color: '#666', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.2 },
   cameraContainer: { flex: 1, backgroundColor: '#000' },
   cameraWrapper: { flex: 1 },
   viewfinderOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
@@ -278,8 +279,6 @@ const styles = StyleSheet.create({
   instructionText: { color: '#FFF', fontSize: 14, fontWeight: '700', textAlign: 'center' },
   placeholderCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
   errorText: { color: '#FFF', marginTop: 20, fontWeight: '600' },
-
-  // Modal Styles
   androidOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   androidSelectionBox: { width: '90%', backgroundColor: '#FFF', borderRadius: 25, padding: 20 },
   editTitle: { fontSize: 18, fontWeight: '900', marginBottom: 20, textAlign: 'center' },
@@ -293,5 +292,10 @@ const styles = StyleSheet.create({
   modalBtn: { flex: 0.48, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   saveBtn: { backgroundColor: '#1B4D20' },
   cancelBtn: { backgroundColor: '#F5F5F5', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
-  closeText: { color: '#9E9E9E', fontWeight: '800' }
+  closeText: { color: '#9E9E9E', fontWeight: '800' },
+  modalContainer: { flex: 1, backgroundColor: '#FFF' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
+  modalTitle: { fontSize: 24, fontWeight: '900', color: '#1B4D20' },
+  bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
+  bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
 });

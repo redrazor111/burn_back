@@ -56,44 +56,36 @@ export default function Shop() {
   };
 
   return (
-    <View style={styles.fullScreen}>
-      <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-        <Text style={styles.title}>Shop at Amazon</Text>
-        <View style={styles.headerAccentBar} />
-        <Text style={styles.subtitle}>SOURCED FROM AMAZON {countryCode}</Text>
-      </View>
+    <ScrollView contentContainerStyle={styles.scrollPadding} showsVerticalScrollIndicator={false}>
+      <View style={styles.placeholderContainer}>
+        <MaterialCommunityIcons
+          name="magnify-expand"
+          size={64}
+          color="#E0E0E0"
+        />
 
-      <ScrollView contentContainerStyle={styles.scrollContentList} showsVerticalScrollIndicator={false}>
-        <View style={styles.placeholderContainer}>
-          <MaterialCommunityIcons
-            name="magnify-expand"
-            size={64}
-            color="#E0E0E0"
+        <Text style={styles.placeholderText}>Search for items to Burn Back on Amazon.</Text>
+
+        {/* Search Input Field */}
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="e.g. Protein Powder, Running Shoes"
+            placeholderTextColor="#9E9E9E"
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            returnKeyType="search"
+            onSubmitEditing={handleOpenAmazonSearch}
           />
-
-          <Text style={styles.placeholderText}>Search for items to Burn Back on Amazon.</Text>
-
-          {/* Search Input Field */}
-          <View style={styles.searchContainer}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="e.g. Protein Powder, Running Shoes"
-              placeholderTextColor="#9E9E9E"
-              value={searchTerm}
-              onChangeText={setSearchTerm}
-              returnKeyType="search"
-              onSubmitEditing={handleOpenAmazonSearch}
-            />
-          </View>
-
-          <TouchableOpacity style={styles.amazonButton} onPress={handleOpenAmazonSearch}>
-            <MaterialCommunityIcons name="magnify" size={20} color="#000" />
-            <Text style={styles.amazonButtonText}>
-              {searchTerm.trim() ? `Search "${searchTerm}"` : `Shop Amazon ${countryCode}`}
-            </Text>
-          </TouchableOpacity>
         </View>
-      </ScrollView>
+
+        <TouchableOpacity style={styles.amazonButton} onPress={handleOpenAmazonSearch}>
+          <MaterialCommunityIcons name="magnify" size={20} color="#000" />
+          <Text style={styles.amazonButtonText}>
+            {searchTerm.trim() ? `Search "${searchTerm}"` : `Shop Amazon ${countryCode}`}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
         <Text style={styles.disclosureText}>
@@ -101,7 +93,7 @@ export default function Shop() {
           Support this app by shopping through these links!
         </Text>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 

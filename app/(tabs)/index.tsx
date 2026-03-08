@@ -106,6 +106,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [pendingResult, setPendingResult] = useState<PendingResult | null>(null);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [showPremium, setShowPremium] = useState(false);
+  const [showShop, setShowShop] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   const [isEditingSelection, setIsEditingSelection] = useState(false);
   const [editName, setEditName] = useState('');
@@ -345,7 +347,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const handleOpenScanScanner = async () => {
     const geminiQuotaCount = await checkQuota();
     if (!isPro && geminiQuotaCount === 'LIMIT_REACHED') setShowPremium(true);
-    else navigation.navigate('Scan');
+    else navigation.navigate('AI Scan');
   };
 
   const confirmSelection = async (option: { name: string; calories: number }) => {
@@ -380,13 +382,19 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   return (
     <View style={styles.cameraTabContainer}>
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <View>
-            <Text style={styles.title}>Daily Dashboard</Text>
-            <View style={styles.headerAccentBar} />
-            <Text style={styles.subtitle}>{age}yr {gender} • {weight}kg Profile Active</Text>
+        <View style={styles.headerTopRow}>
+          <Text style={styles.title}>Daily Dashboard</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
+              <MaterialCommunityIcons name="book-open-variant" size={26} color="#1B4D20" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowShop(true)} style={styles.actionBtn}>
+              <MaterialCommunityIcons name="cart-variant" size={28} color="#1B4D20" />
+            </TouchableOpacity>
           </View>
         </View>
+        <View style={styles.headerAccentBar} />
+        <Text style={styles.subtitle}>{age}yr {gender} • {weight}kg Profile Active</Text>
       </View>
 
       <View style={{ flex: 1 }}>
@@ -485,22 +493,9 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               <Text style={styles.logActivityBtnText}>
                 {(!isPro && activityQuotaCount >= MAX_ACTIVITIES)
                   ? `Upgrade to Premium`
-                  : `Log Exercise/Activity (${MAX_ACTIVITIES - Number(activityQuotaCount || 0)} left)`}
+                  : `Log Exercise/Activity`}
               </Text>
             </View>
-            {!isPro && (
-              <View style={styles.activityQuotaWrapper}>
-                <View
-                  style={[
-                    styles.quotaBarFill,
-                    {
-                      width: `${Math.min(100, (Number(activityQuotaCount || 0) / MAX_ACTIVITIES) * 100)}%`,
-                      backgroundColor: activityQuotaCount >= MAX_ACTIVITIES ? '#FF5252' : '#4CAF50'
-                    }
-                  ]}
-                />
-              </View>
-            )}
           </TouchableOpacity>
 
           {activities?.map((act) => (
@@ -605,6 +600,47 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         </View>
       )}
 
+      {/* GUIDE POP-UP MODAL */}
+      <Modal visible={showGuide} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowGuide(false)}>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
+            <Text style={styles.modalTitle}>Health Guide</Text>
+            <TouchableOpacity onPress={() => setShowGuide(false)}>
+              <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Guide />
+          </View>
+          <TouchableOpacity
+            style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]}
+            onPress={() => setShowGuide(false)}
+          >
+            <Text style={styles.bottomCloseBtnText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* SHOP POP-UP MODAL */}
+      <Modal visible={showShop} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowShop(false)}>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
+            <Text style={styles.modalTitle}>Shop at Amazon</Text>
+            <TouchableOpacity onPress={() => setShowShop(false)}>
+              <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Shop />
+          </View>
+          <TouchableOpacity
+            style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]}
+            onPress={() => setShowShop(false)}
+          >
+            <Text style={styles.bottomCloseBtnText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
       <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} />
     </View>
   );
@@ -612,16 +648,14 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
 function AppContent() {
   const insets = useSafeAreaInsets();
-  const iconMap: Record<string, any> = { Today: 'calendar-outline', Scan: 'camera-outline', Intake: 'fast-food-outline', Burned: 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
+  const iconMap: Record<string, any> = { Today: 'calendar-outline', "AI Scan": 'camera-outline', "Calories Intake": 'fast-food-outline', "Calories Burned": 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       <Tab.Navigator tabBarPosition="bottom" screenOptions={({ route }) => ({ tabBarActiveTintColor: '#1B4D20', tabBarInactiveTintColor: '#9E9E9E', tabBarLabelStyle: { fontSize: 10, fontWeight: '700', textTransform: 'none' }, tabBarStyle: { height: 75 + insets.bottom, paddingBottom: insets.bottom }, tabBarIcon: ({ color, focused }) => { const baseIconName = iconMap[route.name] || 'help-circle-outline'; const finalIconName = focused ? baseIconName.replace('-outline', '') : baseIconName; return <Ionicons name={finalIconName as any} size={24} color={color} />; }, })}>
         <Tab.Screen name="Today">{() => <SummaryScreen />}</Tab.Screen>
-        <Tab.Screen name="Scan">{() => <CameraScreen />}</Tab.Screen>
-        <Tab.Screen name="Intake">{() => <ScanHistory />}</Tab.Screen>
-        <Tab.Screen name="Burned">{() => <ActivityHistory />}</Tab.Screen>
-        <Tab.Screen name="Guide">{() => <Guide />}</Tab.Screen>
-        <Tab.Screen name="Shop">{() => <Shop />}</Tab.Screen>
+        <Tab.Screen name="AI Scan">{() => <CameraScreen />}</Tab.Screen>
+        <Tab.Screen name="Calories Intake">{() => <ScanHistory />}</Tab.Screen>
+        <Tab.Screen name="Calories Burned">{() => <ActivityHistory />}</Tab.Screen>
       </Tab.Navigator>
     </View>
   );
@@ -631,10 +665,13 @@ export default function App() { return <SafeAreaProvider><AppContent /></SafeAre
 
 const styles = StyleSheet.create({
   cameraTabContainer: { flex: 1, backgroundColor: '#FBFBFB' },
-  header: { paddingHorizontal: 20, paddingBottom: 20, backgroundColor: '#fff', elevation: 4, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  title: { fontSize: 28, fontWeight: '900', color: '#1B4D20', letterSpacing: -1 },
-  headerAccentBar: { width: 45, height: 4, backgroundColor: '#1B4D20', opacity: 0.2, borderRadius: 2, marginTop: 2, marginBottom: 8 },
-  subtitle: { fontSize: 12, color: '#666', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.2 },
+  header: { paddingHorizontal: 20, paddingBottom: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
+  actionBtn: { marginLeft: 15 },
+  title: { fontSize: 22, fontWeight: '900', color: '#1B4D20', letterSpacing: -0.5 },
+  headerAccentBar: { width: 45, height: 4, backgroundColor: '#1B4D20', opacity: 0.2, borderRadius: 2, marginTop: 4, marginBottom: 15 },
+  subtitle: { fontSize: 10, color: '#666', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.2 },
   mainTargetBadge: { backgroundColor: '#FFFFFF', borderRadius: 30, marginTop: 20, elevation: 8, shadowOpacity: 0.1, shadowRadius: 10, borderWidth: 1, borderColor: '#F0F0F0', overflow: 'hidden' },
   targetSplitRow: { flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'center', padding: 18 },
   targetColumn: { alignItems: 'center', flex: 1 },
@@ -737,5 +774,10 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     marginTop: 8,
     overflow: 'hidden',
-  }
+  },
+  modalContainer: { flex: 1, backgroundColor: '#FFF' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
+  modalTitle: { fontSize: 24, fontWeight: '900', color: '#1B4D20' },
+  bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
+  bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
 });
