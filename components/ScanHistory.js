@@ -1,4 +1,3 @@
-
 /* eslint-disable react/no-unescaped-entities */
 import { auth, db } from '@/utils/firebaseConfig';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -73,7 +72,6 @@ export default function ScanHistory() {
     return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
   };
 
-  // 1. MOVE THIS UP (Must be defined before analysisData)
   const groupedData = useMemo(() => {
     const groups = {};
     history.forEach(item => {
@@ -87,7 +85,6 @@ export default function ScanHistory() {
     return groups;
   }, [history]);
 
-  // 2. NOW DEFINE ANALYSIS DATA
   const analysisData = useMemo(() => {
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const monthlyStats = {};
@@ -116,7 +113,7 @@ export default function ScanHistory() {
       labels,
       stackedData: {
         labels,
-        legend: ["Protein (g)", "Carbs (g)"],
+        legend: ["Prot (g)", "Carb (g)"],
         data: Object.values(monthlyStats).map(m => [m.prot, m.carb]),
         barColors: ["#4CAF50", "#81C784"]
       }
@@ -363,21 +360,26 @@ export default function ScanHistory() {
                   <Text style={styles.chartHint}>Yearly intake summary</Text>
 
                   <View style={styles.comparisonCard}>
-                    <Text style={styles.comparisonTitle}>Macro Breakdown (Last 12 Months)</Text>
-                    <StackedBarChart
-                      data={analysisData.stackedData}
-                      width={windowWidth - 80}
-                      height={220}
-                      chartConfig={{
-                        backgroundColor: "#fff",
-                        backgroundGradientFrom: "#fff",
-                        backgroundGradientTo: "#fff",
-                        color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`,
-                        labelColor: (opacity = 1) => `rgba(100, 100, 100, ${opacity})`,
-                      }}
-                      style={styles.chartStyle}
-                      hideLegend={false}
-                    />
+                    <Text style={styles.comparisonTitle}>Macro Breakdown (12 Months)</Text>
+                    <Text style={styles.swipeHint}>Swipe to see full year →</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      <StackedBarChart
+                        data={analysisData.stackedData}
+                        width={850} // Fixed wide width to prevent overlap
+                        height={240}
+                        chartConfig={{
+                          backgroundColor: "#fff",
+                          backgroundGradientFrom: "#fff",
+                          backgroundGradientTo: "#fff",
+                          color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`,
+                          labelColor: (opacity = 1) => `rgba(100, 100, 100, ${opacity})`,
+                          barPercentage: 0.6,
+                          propsForLabels: { fontSize: 10, fontWeight: 'bold' }
+                        }}
+                        style={{ marginVertical: 8, borderRadius: 16, paddingRight: 60 }}
+                        hideLegend={false}
+                      />
+                    </ScrollView>
                   </View>
 
                   <View style={styles.averagesContainer}>
@@ -464,6 +466,7 @@ const styles = StyleSheet.create({
   chartContainer: { alignItems: 'center', marginTop: 10 },
   chartStyle: { borderRadius: 16, paddingRight: 40 },
   chartHint: { textAlign: 'center', fontSize: 11, color: '#AAA', fontWeight: '600', marginTop: 5 },
+  swipeHint: { fontSize: 10, color: '#BBB', textAlign: 'center', marginBottom: 5, fontWeight: 'bold' },
   bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
   bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   placeholderContainer: { alignItems: 'center', marginTop: 100 },
