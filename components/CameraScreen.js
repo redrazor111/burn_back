@@ -24,6 +24,7 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 // Local Utilities & Components
 import { saveToHistory } from '@/utils/historyStorage';
 import { checkQuota, incrementQuota } from '@/utils/quotaService';
+import Guide from '../components/Guide';
 import Shop from '../components/Shop';
 import { analyzeImageWithGemini } from '../utils/geminiService';
 import { useSubscriptionStatus } from '../utils/subscription';
@@ -39,6 +40,7 @@ export default function CameraScreen() {
   const [hasPermission, setHasPermission] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showPremium, setShowPremium] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const [showShop, setShowShop] = useState(false);
 
   // Prompt/Result States
@@ -144,6 +146,9 @@ export default function CameraScreen() {
         <View style={styles.headerTopRow}>
           <Text style={styles.title}>AI Scanner</Text>
           <View style={styles.headerActions}>
+            <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
+              <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowShop(true)} style={styles.actionBtn}>
               <MaterialCommunityIcons name="cart-variant" size={28} color="#1B4D20" />
             </TouchableOpacity>
@@ -259,6 +264,18 @@ export default function CameraScreen() {
           </View>
         </Modal>
       )}
+
+      {/* GUIDE MODAL */}
+      <Modal visible={showGuide} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowGuide(false)}>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
+            <Text style={styles.modalTitle}>Health Guide</Text>
+            <TouchableOpacity onPress={() => setShowGuide(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity>
+          </View>
+          <View style={{ flex: 1 }}><Guide /></View>
+          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowGuide(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* SHOP POP-UP MODAL */}
       <Modal visible={showShop} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowShop(false)}>

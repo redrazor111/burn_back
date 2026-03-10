@@ -2,7 +2,7 @@
 import { auth, db } from '@/utils/firebaseConfig';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   LayoutAnimation,
@@ -19,24 +19,47 @@ import {
 import { LineChart, StackedBarChart } from "react-native-chart-kit";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Import your Shop component
+// Import your components
+import { useSubscriptionStatus } from '@/utils/subscription'; // Assuming this is your path
+import Guide from '../components/Guide';
 import Shop from '../components/Shop';
+import PremiumModal from './PremiumModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// Helper for date formatting
+const getOrdinalDate = (date) => {
+  const d = date.getDate();
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const month = monthNames[date.getMonth()];
+  if (d > 3 && d < 21) return `${d}th ${month}`;
+  switch (d % 10) {
+    case 1: return `${d}st ${month}`;
+    case 2: return `${d}nd ${month}`;
+    case 3: return `${d}rd ${month}`;
+    default: return `${d}th ${month}`;
+  }
+};
+
 export default function ScanHistory() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const { width: windowWidth } = useWindowDimensions();
+  const { isPro } = useSubscriptionStatus();
+
   const [history, setHistory] = useState([]);
   const [expandedSections, setExpandedSections] = useState({});
   const [userId, setUserId] = useState(auth.currentUser?.uid);
 
-  // Modal States
+  // Modal & View States
   const [showChart, setShowChart] = useState(false);
   const [showShop, setShowShop] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [timeframe, setTimeframe] = useState(7);
+  const [showPremium, setShowPremium] = useState(false);
+  const [targetCalories, setTargetCalories] = useState(2000);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -46,11 +69,23 @@ export default function ScanHistory() {
   useEffect(() => {
     if (isFocused) {
       setExpandedSections({});
+      setShowPremium(false);
       setShowShop(false);
       setShowChart(false);
+      setShowGuide(false);
     }
   }, [isFocused]);
 
+  // Handler for Chart Icon
+  const handleOpenChart = () => {
+    if (isPro) {
+      setShowChart(true);
+    } else {
+      setShowPremium(true);
+    }
+  };
+
+  // Meals Listener
   useEffect(() => {
     if (!userId) return;
     const q = query(collection(db, 'users', userId, 'meals'), orderBy('createdAt', 'desc'));
@@ -61,7 +96,20 @@ export default function ScanHistory() {
         identifiedProduct: doc.data().productName || doc.data().identifiedProduct,
       }));
       setHistory(historyData);
-    }, (error) => console.error("Firebase Error:", error));
+    });
+    return () => unsubscribe();
+  }, [userId]);
+
+  // Profile Listener for targetCalories
+  useEffect(() => {
+    if (!userId) return;
+    const userRef = doc(db, 'users', userId, 'profile', 'data');
+    const unsubscribe = onSnapshot(userRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.targetCalories) setTargetCalories(Number(data.targetCalories));
+      }
+    });
     return () => unsubscribe();
   }, [userId]);
 
@@ -86,104 +134,60 @@ export default function ScanHistory() {
   }, [history]);
 
   const analysisData = useMemo(() => {
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const monthlyStats = {};
-
-    for (let i = 11; i >= 0; i--) {
+    const data = [];
+    const labels = [];
+    const now = new Date();
+    for (let i = timeframe - 1; i >= 0; i--) {
       const d = new Date();
-      d.setMonth(d.getMonth() - i);
-      const ymKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      monthlyStats[ymKey] = { label: monthNames[d.getMonth()], cal: 0, prot: 0, carb: 0 };
+      d.setDate(now.getDate() - i);
+      const key = getSafeDateKey(d.toISOString());
+      const stats = groupedData[key] || { totalProtein: 0, totalCarbs: 0 };
+      data.push([Number(stats.totalProtein), Number(stats.totalCarbs)]);
+      if (timeframe === 7) labels.push(getOrdinalDate(d));
+      else if (i % 14 === 0) labels.push(`${d.getDate()}/${d.getMonth() + 1}`);
+      else labels.push("");
     }
-
-    Object.keys(groupedData).forEach(dateKey => {
-      if (dateKey === "Unknown") return;
-      const [year, month] = dateKey.split('/');
-      const ymKey = `${year}-${month}`;
-      if (monthlyStats[ymKey]) {
-        monthlyStats[ymKey].cal += groupedData[dateKey].totalCalories;
-        monthlyStats[ymKey].prot += groupedData[dateKey].totalProtein;
-        monthlyStats[ymKey].carb += groupedData[dateKey].totalCarbs;
-      }
-    });
-
-    const labels = Object.values(monthlyStats).map(m => m.label);
-
-    return {
-      labels,
-      stackedData: {
-        labels,
-        legend: ["Prot (g)", "Carb (g)"],
-        data: Object.values(monthlyStats).map(m => [m.prot, m.carb]),
-        barColors: ["#4CAF50", "#81C784"]
-      }
-    };
-  }, [groupedData]);
+    return { stackedData: { labels, legend: ["Prot (g)", "Carb (g)"], data, barColors: ["#1B4D20", "#81C784"] } };
+  }, [groupedData, timeframe]);
 
   const todayStats = useMemo(() => {
     const todayKey = getSafeDateKey(new Date().toISOString());
     return groupedData[todayKey] || { totalCalories: 0, totalProtein: 0, totalCarbs: 0 };
   }, [groupedData]);
 
-  const weeklyStats = useMemo(() => {
-    const now = new Date();
-    const getSumForRange = (daysAgoStart, daysAgoEnd) => {
-      let total = 0;
-      for (let i = daysAgoStart; i <= daysAgoEnd; i++) {
-        const d = new Date();
-        d.setDate(now.getDate() - i);
-        const key = getSafeDateKey(d.toISOString());
-        total += groupedData[key]?.totalCalories || 0;
-      }
-      return total;
-    };
-    const thisWeek = getSumForRange(0, 6);
-    const lastWeek = getSumForRange(7, 13);
-    const diff = thisWeek - lastWeek;
-    const percent = lastWeek > 0 ? (diff / lastWeek) * 100 : 0;
-    return { thisWeek, lastWeek, diff, percent: percent.toFixed(1) };
-  }, [groupedData]);
-
   const { chartData, monthlyAverage, dailyAverage } = useMemo(() => {
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const monthlyTotals = {};
-
-    for (let i = 11; i >= 0; i--) {
+    const dailyValues = [];
+    const labels = [];
+    const now = new Date();
+    for (let i = timeframe - 1; i >= 0; i--) {
       const d = new Date();
-      d.setMonth(d.getMonth() - i);
-      const ymKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      monthlyTotals[ymKey] = { label: monthNames[d.getMonth()], total: 0 };
+      d.setDate(now.getDate() - i);
+      const key = getSafeDateKey(d.toISOString());
+      const val = groupedData[key]?.totalCalories || 0;
+      dailyValues.push(Number(val));
+      if (timeframe === 7) labels.push(getOrdinalDate(d));
+      else if (i % 14 === 0) labels.push(`${d.getDate()}/${d.getMonth() + 1}`);
+      else labels.push("");
     }
+    const activeDays = dailyValues.filter(v => v > 0);
+    const dAvg = activeDays.length > 0 ? Math.round(activeDays.reduce((a, b) => a + b, 0) / activeDays.length) : 0;
+    return { dailyAverage: dAvg, monthlyAverage: dAvg * 30, chartData: { labels, datasets: [{ data: dailyValues, color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`, strokeWidth: 2 }], legend: [timeframe === 7 ? "7-Day Intake" : "60-Day Intake"] } };
+  }, [groupedData, timeframe]);
 
-    Object.keys(groupedData).forEach(dateKey => {
-      if (dateKey === "Unknown") return;
-      const [year, month] = dateKey.split('/');
-      const ymKey = `${year}-${month}`;
-      if (monthlyTotals[ymKey]) monthlyTotals[ymKey].total += groupedData[dateKey].totalCalories;
-    });
-
-    const finalData = Object.values(monthlyTotals).map(m => m.total);
-    const activeMonths = finalData.filter(v => v > 0);
-    const mAvg = activeMonths.length > 0 ? Math.round(activeMonths.reduce((a, b) => a + b, 0) / activeMonths.length) : 0;
-
-    const dailyValues = Object.keys(groupedData)
-      .filter(key => key !== "Unknown")
-      .map(key => groupedData[key].totalCalories);
-
-    const dAvg = dailyValues.length > 0 ? Math.round(dailyValues.reduce((a, b) => a + b, 0) / dailyValues.length) : 0;
-
-    if (finalData.every(v => v === 0)) return { chartData: null, monthlyAverage: 0, dailyAverage: 0 };
-
-    return {
-      monthlyAverage: mAvg,
-      dailyAverage: dAvg,
-      chartData: {
-        labels: Object.values(monthlyTotals).map((m, i) => (i % 2 === 0 ? m.label : "")),
-        datasets: [{ data: finalData, color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`, strokeWidth: 2 }],
-        legend: ["Annual Intake"]
-      }
-    };
-  }, [groupedData]);
+  const chartConfig = {
+    backgroundColor: "#fff",
+    backgroundGradientFrom: "#fff",
+    backgroundGradientTo: "#fff",
+    decimalPlaces: 0,
+    color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`,
+    labelColor: (opacity = 1) => `rgba(100, 100, 100, ${opacity})`,
+    propsForDots: { r: "0" },
+    propsForLabels: { fontSize: 8 },
+    fillShadowGradientFrom: "#1B4D20",
+    fillShadowGradientTo: "#81C784",
+    fillShadowGradientOpacity: 0.1,
+    barPercentage: timeframe === 7 ? 0.6 : 0.2,
+  };
 
   const toggleSection = (section) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -199,17 +203,20 @@ export default function ScanHistory() {
     const yesterday = new Date();
     yesterday.setDate(now.getDate() - 1);
     if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-    return `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+    return getOrdinalDate(date);
   };
 
   return (
     <View style={styles.fullScreen}>
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <View style={styles.headerTopRow}>
-          <Text style={styles.title}>Intake History</Text>
+          <Text style={styles.title}>Calories Intake History</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity onPress={() => setShowChart(true)} style={styles.actionBtn}>
-              <MaterialCommunityIcons name="finance" size={30} color="#1B4D20" />
+            <TouchableOpacity onPress={handleOpenChart} style={styles.actionBtn}>
+              <MaterialCommunityIcons name="finance" size={28} color="#1B4D20" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
+              <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowShop(true)} style={styles.actionBtn}>
               <MaterialCommunityIcons name="cart-variant" size={28} color="#1B4D20" />
@@ -256,7 +263,6 @@ export default function ScanHistory() {
                     <View key={item.id} style={styles.historyCard}>
                       <View style={styles.historyIconBg}><MaterialCommunityIcons name={item.isManual ? "food-apple" : "camera"} size={26} color="#1B4D20" /></View>
                       <View style={styles.historyDetails}>
-                        <Text style={styles.historyTime}>{item.date ? new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Logged'}</Text>
                         <Text style={styles.historyFoodName}>{item.identifiedProduct || "Unknown Item"}</Text>
                         <Text style={styles.historyMacroSub}>{Number(item.protein || 0)}g Protein • {Number(item.carbs || 0)}g Carbs</Text>
                       </View>
@@ -270,147 +276,114 @@ export default function ScanHistory() {
         )}
       </ScrollView>
 
-      {/* SHOP POP-UP MODAL */}
+      {/* SHOP MODAL */}
       <Modal visible={showShop} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowShop(false)}>
         <View style={styles.modalContainer}>
           <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
             <Text style={styles.modalTitle}>Shop at Amazon</Text>
-            <TouchableOpacity onPress={() => setShowShop(false)}>
-              <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowShop(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity>
           </View>
-          <View style={{ flex: 1 }}>
-            <Shop />
-          </View>
-          <TouchableOpacity
-            style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]}
-            onPress={() => setShowShop(false)}
-          >
-            <Text style={styles.bottomCloseBtnText}>Close</Text>
-          </TouchableOpacity>
+          <View style={{ flex: 1 }}><Shop /></View>
+          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowShop(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
         </View>
       </Modal>
 
-      {/* TRENDS POP-UP MODAL */}
+      {/* GUIDE MODAL */}
+      <Modal visible={showGuide} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowGuide(false)}>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
+            <Text style={styles.modalTitle}>Health Guide</Text>
+            <TouchableOpacity onPress={() => setShowGuide(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity>
+          </View>
+          <View style={{ flex: 1 }}><Guide /></View>
+          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowGuide(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* TRENDS MODAL */}
       <Modal visible={showChart} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowChart(false)}>
         <View style={styles.modalContainer}>
           <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
             <Text style={styles.modalTitle}>Intake Trends</Text>
-            <TouchableOpacity onPress={() => setShowChart(false)}>
-              <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowChart(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity>
           </View>
 
           <View style={{ flex: 1 }}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
               {chartData ? (
                 <>
-                  <View style={styles.comparisonCard}>
-                    <View style={styles.comparisonHeader}>
-                      <Text style={styles.comparisonTitle}>Weekly Progress</Text>
-                      <View style={[styles.trendBadge, { backgroundColor: weeklyStats.diff <= 0 ? '#E8F5E9' : '#FFEBEE' }]} />
-                    </View>
-                    <View style={styles.comparisonRow}>
-                      <View style={styles.statBox}>
-                        <Text style={styles.compLabel}>THIS WEEK</Text>
-                        <Text style={styles.compValue}>{weeklyStats.thisWeek} <Text style={styles.compUnit}>cal</Text></Text>
-                      </View>
-                      <View style={styles.compDivider} />
-                      <View style={styles.statBox}>
-                        <Text style={styles.compLabel}>LAST WEEK</Text>
-                        <Text style={styles.compValue}>{weeklyStats.lastWeek} <Text style={styles.compUnit}>cal</Text></Text>
-                      </View>
-                    </View>
-                  </View>
-
                   <View style={styles.averagesContainer}>
                     <View style={styles.avgBoxSmall}>
                       <Text style={styles.avgLabelCenter}>DAILY AVERAGE</Text>
-                      <Text style={styles.avgValueCenter}>{dailyAverage} <Text style={styles.avgUnit}>cal</Text></Text>
+                      <Text style={styles.avgValueCenter}>{dailyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
                     </View>
                     <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
-                      <Text style={styles.avgLabelCenter}>MONTHLY AVERAGE</Text>
-                      <Text style={styles.avgValueCenter}>{monthlyAverage} <Text style={styles.avgUnit}>cal</Text></Text>
+                      <Text style={styles.avgLabelCenter}>PROJECTED MONTHLY</Text>
+                      <Text style={styles.avgValueCenter}>{monthlyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
                     </View>
                   </View>
 
-                  <View style={styles.chartContainer}>
-                    <LineChart
-                      data={chartData}
-                      width={windowWidth - 40}
-                      height={220}
-                      chartConfig={{
-                        backgroundColor: "#fff",
-                        backgroundGradientFrom: "#fff",
-                        backgroundGradientTo: "#fff",
-                        decimalPlaces: 0,
-                        color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`,
-                        labelColor: (opacity = 1) => `rgba(100, 100, 100, ${opacity})`,
-                        propsForDots: { r: "3", strokeWidth: "1.5", stroke: "#1B4D20" },
-                        propsForLabels: { fontSize: 9 },
-                      }}
-                      bezier
-                      style={styles.chartStyle}
-                      withInnerLines={false}
-                      withOuterLines={true}
-                      withVerticalLines={false}
-                      withHorizontalLines={true}
-                    />
+                  <View style={styles.timeframeContainer}>
+                    {[7, 60].map((days) => (
+                      <TouchableOpacity key={days} style={[styles.timeframeBtn, timeframe === days && styles.timeframeBtnActive]} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setTimeframe(days); }}>
+                        <Text style={[styles.timeframeText, timeframe === days && styles.timeframeTextActive]}>{days === 7 ? "Weekly" : "60 Days"}</Text>
+                      </TouchableOpacity>
+                    ))}
                   </View>
-                  <Text style={styles.chartHint}>Yearly intake summary</Text>
 
                   <View style={styles.comparisonCard}>
-                    <Text style={styles.comparisonTitle}>Macro Breakdown (12 Months)</Text>
-                    <Text style={styles.swipeHint}>Swipe to see full year →</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      <StackedBarChart
-                        data={analysisData.stackedData}
-                        width={850} // Fixed wide width to prevent overlap
-                        height={240}
-                        chartConfig={{
-                          backgroundColor: "#fff",
-                          backgroundGradientFrom: "#fff",
-                          backgroundGradientTo: "#fff",
-                          color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`,
-                          labelColor: (opacity = 1) => `rgba(100, 100, 100, ${opacity})`,
-                          barPercentage: 0.6,
-                          propsForLabels: { fontSize: 10, fontWeight: 'bold' }
-                        }}
-                        style={{ marginVertical: 8, borderRadius: 16, paddingRight: 60 }}
-                        hideLegend={false}
-                      />
-                    </ScrollView>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={styles.comparisonTitle}>{timeframe === 7 ? "7-Day" : "60-Day"} Calorie Trend</Text>
+                      <Text style={{ fontSize: 10, color: '#FF5252', fontWeight: 'bold' }}>GOAL: {targetCalories}</Text>
+                    </View>
+                    <LineChart
+                      data={{
+                        ...chartData,
+                        datasets: [...chartData.datasets, {
+                          data: new Array(timeframe).fill(targetCalories),
+                          color: (opacity = 1) => `rgba(255, 82, 82, ${opacity * 0.4})`,
+                          strokeWidth: 2,
+                          withDots: false,
+                        }]
+                      }}
+                      width={windowWidth - 40}
+                      height={220}
+                      chartConfig={chartConfig}
+                      bezier
+                      withDots={timeframe === 7}
+                      style={styles.chartStyle}
+                    />
                   </View>
 
-                  <View style={styles.averagesContainer}>
-                    <View style={styles.avgBoxSmall}>
-                      <Text style={styles.avgLabelCenter}>AVG PROTEIN</Text>
-                      <Text style={styles.avgValueCenter}>{Math.round(Object.values(groupedData).reduce((a, b) => a + b.totalProtein, 0) / (Object.keys(groupedData).length || 1))}g</Text>
-                    </View>
-                    <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
-                      <Text style={styles.avgLabelCenter}>AVG CARBS</Text>
-                      <Text style={styles.avgValueCenter}>{Math.round(Object.values(groupedData).reduce((a, b) => a + b.totalCarbs, 0) / (Object.keys(groupedData).length || 1))}g</Text>
-                    </View>
+                  <View style={styles.comparisonCard}>
+                    <Text style={styles.comparisonTitle}>{timeframe === 7 ? "Weekly" : "60-Day"} Macros</Text>
+                    <StackedBarChart
+                      data={analysisData.stackedData}
+                      width={windowWidth - 40}
+                      height={240}
+                      chartConfig={chartConfig}
+                      style={{ marginVertical: 8, borderRadius: 16 }}
+                      hideLegend={false}
+                    />
                   </View>
                 </>
               ) : (
                 <View style={styles.noDataChart}>
                   <MaterialCommunityIcons name="chart-line-variant" size={80} color="#EEE" />
-                  <Text style={styles.placeholderText}>Not enough data for yearly trends.</Text>
+                  <Text style={styles.placeholderText}>Not enough data for trends.</Text>
                 </View>
               )}
               <View style={{ height: 20 }} />
             </ScrollView>
           </View>
 
-          <TouchableOpacity
-            style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]}
-            onPress={() => setShowChart(false)}
-          >
-            <Text style={styles.bottomCloseBtnText}>{chartData ? "Close" : "Go Back"}</Text>
+          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}>
+            <Text style={styles.bottomCloseBtnText}>Close</Text>
           </TouchableOpacity>
         </View>
       </Modal>
+
+      <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} />
     </View>
   );
 }
@@ -440,7 +413,6 @@ const styles = StyleSheet.create({
   historyCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#F5F5F5' },
   historyIconBg: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   historyDetails: { flex: 1 },
-  historyTime: { fontSize: 10, fontWeight: '700', color: '#BDBDBD' },
   historyFoodName: { fontSize: 16, fontWeight: '800', color: '#212529' },
   historyMacroSub: { fontSize: 11, color: '#666', fontWeight: '600', marginTop: 2 },
   calorieBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
@@ -449,27 +421,20 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   modalTitle: { fontSize: 24, fontWeight: '900', color: '#1B4D20' },
   comparisonCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, marginVertical: 15, borderWidth: 1, borderColor: '#EEE' },
-  comparisonHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  comparisonTitle: { fontSize: 16, fontWeight: '800', color: '#212529' },
-  trendBadge: { width: 12, height: 12, borderRadius: 6 },
-  comparisonRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
-  statBox: { alignItems: 'center' },
-  compLabel: { fontSize: 9, fontWeight: '800', color: '#9E9E9E', marginBottom: 5 },
-  compValue: { fontSize: 18, fontWeight: '900', color: '#1B4D20' },
-  compUnit: { fontSize: 11, fontWeight: '400', color: '#666' },
-  compDivider: { width: 1, height: 30, backgroundColor: '#EEE' },
   averagesContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
   avgBoxSmall: { flex: 1, backgroundColor: '#F8F9FA', padding: 15, borderRadius: 20, alignItems: 'center' },
   avgLabelCenter: { fontSize: 9, fontWeight: '800', color: '#9E9E9E', marginBottom: 5 },
   avgValueCenter: { fontSize: 18, fontWeight: '900', color: '#1B4D20' },
   avgUnit: { fontSize: 12, fontWeight: '400', color: '#666' },
-  chartContainer: { alignItems: 'center', marginTop: 10 },
-  chartStyle: { borderRadius: 16, paddingRight: 40 },
-  chartHint: { textAlign: 'center', fontSize: 11, color: '#AAA', fontWeight: '600', marginTop: 5 },
-  swipeHint: { fontSize: 10, color: '#BBB', textAlign: 'center', marginBottom: 5, fontWeight: 'bold' },
-  bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+  chartStyle: { marginVertical: 8, borderRadius: 16 },
+  bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
   bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   placeholderContainer: { alignItems: 'center', marginTop: 100 },
   placeholderText: { color: '#BDBDBD', marginTop: 15, fontSize: 16, textAlign: 'center' },
-  noDataChart: { flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 400 }
+  noDataChart: { flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 400 },
+  timeframeContainer: { flexDirection: 'row', backgroundColor: '#F5F5F5', borderRadius: 12, padding: 4, marginBottom: 10 },
+  timeframeBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10 },
+  timeframeBtnActive: { backgroundColor: '#FFF' },
+  timeframeText: { fontSize: 12, fontWeight: '800', color: '#9E9E9E' },
+  timeframeTextActive: { color: '#1B4D20' },
 });

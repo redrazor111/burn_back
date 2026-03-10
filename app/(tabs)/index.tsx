@@ -498,7 +498,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           <Text style={styles.title}>Daily Dashboard</Text>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
-              <MaterialCommunityIcons name="book-open-variant" size={26} color="#1B4D20" />
+              <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowShop(true)} style={styles.actionBtn}>
               <MaterialCommunityIcons name="cart-variant" size={28} color="#1B4D20" />

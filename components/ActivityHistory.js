@@ -1,5 +1,6 @@
 /* eslint-disable react/no-unescaped-entities */
 import { auth, db } from '@/utils/firebaseConfig';
+import { useSubscriptionStatus } from '@/utils/subscription'; // Assuming this is your path
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
@@ -20,7 +21,9 @@ import { LineChart } from "react-native-chart-kit";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Import your Shop component
+import Guide from '../components/Guide';
 import Shop from '../components/Shop';
+import PremiumModal from './PremiumModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -33,10 +36,13 @@ export default function ActivityHistory() {
   const [history, setHistory] = useState([]);
   const [expandedSections, setExpandedSections] = useState({});
   const [userId, setUserId] = useState(auth.currentUser?.uid);
+    const { isPro } = useSubscriptionStatus();
 
   // Modal States
   const [showChart, setShowChart] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const [showShop, setShowShop] = useState(false);
+  const [showPremium, setShowPremium] = useState(false);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -45,9 +51,11 @@ export default function ActivityHistory() {
 
   useEffect(() => {
     if (isFocused) {
-        setExpandedSections({});
-        setShowShop(false);
-        setShowChart(false);
+      setExpandedSections({});
+      setShowPremium(false);
+      setShowShop(false);
+      setShowChart(false);
+      setShowGuide(false);
     }
   }, [isFocused]);
 
@@ -63,6 +71,14 @@ export default function ActivityHistory() {
     }, (error) => console.error("Firebase Activity Error:", error));
     return () => unsubscribe();
   }, [userId]);
+
+    const handleOpenChart = () => {
+    if (isPro) {
+      setShowChart(true);
+    } else {
+      setShowPremium(true);
+    }
+  };
 
   const getSafeDateKey = (dateString) => {
     if (!dateString) return "Unknown";
@@ -165,13 +181,16 @@ export default function ActivityHistory() {
     <View style={styles.fullScreen}>
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <View style={styles.headerTopRow}>
-          <Text style={styles.title}>Calorie Burn History</Text>
+          <Text style={styles.title}>Calories Burned History</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity onPress={() => setShowChart(true)} style={styles.actionBtn}>
-                <MaterialCommunityIcons name="finance" size={30} color="#1B4D20" />
+            <TouchableOpacity onPress={handleOpenChart} style={styles.actionBtn}>
+              <MaterialCommunityIcons name="finance" size={28} color="#1B4D20" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
+              <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowShop(true)} style={styles.actionBtn}>
-                <MaterialCommunityIcons name="cart-variant" size={28} color="#1B4D20" />
+              <MaterialCommunityIcons name="cart-variant" size={28} color="#1B4D20" />
             </TouchableOpacity>
           </View>
         </View>
@@ -226,6 +245,18 @@ export default function ActivityHistory() {
           ))
         )}
       </ScrollView>
+
+      {/* GUIDE MODAL */}
+      <Modal visible={showGuide} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowGuide(false)}>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
+            <Text style={styles.modalTitle}>Health Guide</Text>
+            <TouchableOpacity onPress={() => setShowGuide(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity>
+          </View>
+          <View style={{ flex: 1 }}><Guide /></View>
+          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowGuide(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* SHOP POP-UP MODAL */}
       <Modal visible={showShop} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowShop(false)}>
@@ -283,14 +314,14 @@ export default function ActivityHistory() {
 
                   {/* AVERAGES SECTION */}
                   <View style={styles.averagesContainer}>
-                      <View style={styles.avgBoxSmall}>
-                          <Text style={styles.avgLabelCenter}>DAILY AVG BURN</Text>
-                          <Text style={styles.avgValueCenter}>{dailyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                      </View>
-                      <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
-                          <Text style={styles.avgLabelCenter}>MONTHLY AVG BURN</Text>
-                          <Text style={styles.avgValueCenter}>{monthlyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                      </View>
+                    <View style={styles.avgBoxSmall}>
+                      <Text style={styles.avgLabelCenter}>DAILY AVG BURN</Text>
+                      <Text style={styles.avgValueCenter}>{dailyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                    </View>
+                    <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
+                      <Text style={styles.avgLabelCenter}>MONTHLY AVG BURN</Text>
+                      <Text style={styles.avgValueCenter}>{monthlyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                    </View>
                   </View>
 
                   <View style={styles.chartContainer}>
@@ -337,6 +368,8 @@ export default function ActivityHistory() {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} />
     </View>
   );
 }
