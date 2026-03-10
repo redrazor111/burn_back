@@ -46,6 +46,8 @@ export default function CameraScreen() {
   const [isEditingSelection, setIsEditingSelection] = useState(false);
   const [editName, setEditName] = useState('');
   const [editCals, setEditCals] = useState('');
+  const [editProtein, setEditProtein] = useState(''); // Added
+  const [editCarbs, setEditCarbs] = useState('');     // Added
 
   const scanLineAnim = useRef(new Animated.Value(0)).current;
 
@@ -99,6 +101,8 @@ export default function CameraScreen() {
       const docRef = await addDoc(collection(db, 'users', user.uid, 'meals'), {
         productName: option.name,
         calories: option.calories.toString(),
+        protein: (option.protein || 0).toString(), // Added
+        carbs: (option.carbs || 0).toString(),     // Added
         isManual: false,
         date: new Date().toISOString(),
         createdAt: serverTimestamp(),
@@ -107,7 +111,9 @@ export default function CameraScreen() {
       await saveToHistory(option.name, {
         id: docRef.id,
         identifiedProduct: option.name,
-        calories: option.calories
+        calories: option.calories,
+        protein: option.protein || 0, // Added
+        carbs: option.carbs || 0,     // Added
       });
 
       setPendingResult(null);
@@ -122,6 +128,8 @@ export default function CameraScreen() {
   const startEditingOption = (opt) => {
     setEditName(opt.name);
     setEditCals(opt.calories.toString());
+    setEditProtein((opt.protein || 0).toString()); // Added
+    setEditCarbs((opt.carbs || 0).toString());     // Added
     setIsEditingSelection(true);
   };
 
@@ -132,13 +140,12 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Updated Header to match Activity Layout */}
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <View style={styles.headerTopRow}>
           <Text style={styles.title}>AI Scanner</Text>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={() => setShowShop(true)} style={styles.actionBtn}>
-                <MaterialCommunityIcons name="cart-variant" size={28} color="#1B4D20" />
+              <MaterialCommunityIcons name="cart-variant" size={28} color="#1B4D20" />
             </TouchableOpacity>
           </View>
         </View>
@@ -182,7 +189,7 @@ export default function CameraScreen() {
             <View style={styles.androidSelectionBox}>
               <Text style={styles.editTitle}>{isEditingSelection ? "Adjust Details" : "Select Best Match"}</Text>
               {isEditingSelection ? (
-                <View style={{ width: '100%', padding: 10 }}>
+                <ScrollView style={{ width: '100%', padding: 10 }}>
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>Food Name</Text>
                     <TextInput style={[styles.editInputSmall, { textAlign: 'left' }]} value={editName} onChangeText={setEditName} />
@@ -191,30 +198,53 @@ export default function CameraScreen() {
                     <Text style={styles.inputLabel}>Calories</Text>
                     <TextInput style={styles.editInputSmall} value={editCals} onChangeText={setEditCals} keyboardType="numeric" />
                   </View>
-                  <View style={styles.editActions}>
+                  {/* Added Protein and Carbs inputs */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <View style={[styles.inputGroup, { flex: 0.48 }]}>
+                      <Text style={styles.inputLabel}>Protein (g)</Text>
+                      <TextInput style={styles.editInputSmall} value={editProtein} onChangeText={setEditProtein} keyboardType="numeric" />
+                    </View>
+                    <View style={[styles.inputGroup, { flex: 0.48 }]}>
+                      <Text style={styles.inputLabel}>Carbs (g)</Text>
+                      <TextInput style={styles.editInputSmall} value={editCarbs} onChangeText={setEditCarbs} keyboardType="numeric" />
+                    </View>
+                  </View>
+                  <View style={[styles.editActions, { marginTop: 10, marginBottom: 20 }]}>
                     <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsEditingSelection(false)}>
                       <Text>Back</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={() => confirmSelection({ name: editName, calories: parseInt(editCals) || 0 })}>
-                      <Text style={{ color: '#fff' }}>Add Meal</Text>
+                    <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={() => confirmSelection({
+                      name: editName,
+                      calories: parseInt(editCals) || 0,
+                      protein: parseInt(editProtein) || 0,
+                      carbs: parseInt(editCarbs) || 0
+                    })}>
+                      <Text style={{ color: '#fff' }}>Add</Text>
                     </TouchableOpacity>
                   </View>
-                </View>
+                </ScrollView>
               ) : (
                 <>
-                  <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
+                  <ScrollView style={{ maxHeight: 350 }} showsVerticalScrollIndicator={false}>
                     {pendingResult?.options?.map((opt, idx) => (
                       <View key={idx} style={styles.optionCard}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.optionName}>{opt.name}</Text>
                           <Text style={styles.optionCal}>{opt.calories} cal</Text>
+                          <Text style={styles.optionCal}>Protein: {opt.protein || 0}g | Carbs: {opt.carbs || 0}g</Text>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <TouchableOpacity onPress={() => startEditingOption(opt)} style={{ padding: 8 }}>
-                            <Ionicons name="pencil" size={20} color="#9E9E9E" />
+                          <TouchableOpacity
+                            onPress={() => startEditingOption(opt)}
+                            style={styles.rowActionBtn}
+                          >
+                            <MaterialCommunityIcons name="pencil" size={18} color="#1B4D20" />
                           </TouchableOpacity>
-                          <TouchableOpacity onPress={() => confirmSelection(opt)} style={{ padding: 8 }}>
-                            <Ionicons name="add-circle" size={28} color="#1B4D20" />
+                          <TouchableOpacity
+                            onPress={() => confirmSelection(opt)}
+                            style={[styles.rowActionBtn, { backgroundColor: '#E8F5E9' }]}
+                          >
+                            <Ionicons name="add-circle" size={24} color="#1B4D20" />
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -282,7 +312,16 @@ const styles = StyleSheet.create({
   androidOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   androidSelectionBox: { width: '90%', backgroundColor: '#FFF', borderRadius: 25, padding: 20 },
   editTitle: { fontSize: 18, fontWeight: '900', marginBottom: 20, textAlign: 'center' },
-  optionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9F9F9', padding: 15, borderRadius: 15, marginBottom: 10, borderWidth: 1, borderColor: '#EEE' },
+  optionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9F9F9',
+    padding: 12, // Slightly tighter padding for better button fit
+    borderRadius: 18,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#EEE'
+  },
   optionName: { fontSize: 15, fontWeight: '800' },
   optionCal: { fontSize: 13, color: '#2E7D32', fontWeight: '700' },
   inputGroup: { marginBottom: 15 },
@@ -298,4 +337,14 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 24, fontWeight: '900', color: '#1B4D20' },
   bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
   bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  rowActionBtn: {
+    padding: 8,
+    marginLeft: 6,
+    backgroundColor: '#F0F0F0', // Weighted background
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 38,
+    height: 38,
+  },
 });
