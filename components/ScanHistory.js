@@ -210,7 +210,7 @@ export default function ScanHistory() {
     <View style={styles.fullScreen}>
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <View style={styles.headerTopRow}>
-          <Text style={styles.title}>Calories Intake History</Text>
+          <Text style={styles.title}>Calories Intake</Text>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={handleOpenChart} style={styles.actionBtn}>
               <MaterialCommunityIcons name="finance" size={28} color="#1B4D20" />

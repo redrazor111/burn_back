@@ -549,14 +549,14 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           </View>
 
           <View style={styles.btnActionRow}>
-            {/* LOG MEALS - Updated with Burger & Drink Icon */}
+            {/* LOG MEALS */}
             <TouchableOpacity
               style={[styles.tripleBtn, (!isPro && mealQuotaCount >= MAX_MEALS) && styles.logActivityBtnLocked]}
               onPress={handleOpenFoodLogger}
             >
               <View style={styles.iconRow}>
                 <MaterialCommunityIcons
-                  name={((!isPro && mealQuotaCount >= MAX_MEALS) ? "lock" : "food-burger") as any}
+                  name={((!isPro && mealQuotaCount >= MAX_MEALS) ? "lock" : "food-apple") as any}
                   size={20}
                   color={(!isPro && mealQuotaCount >= MAX_MEALS) ? "#9E9E9E" : "#1B4D20"}
                 />
@@ -596,9 +596,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 color={(!isPro && geminiCount >= MAX_SEARCHES) ? "#9E9E9E" : "#1B4D20"}
               />
               <Text style={styles.tripleBtnText}>
-                {(!isPro && geminiCount >= MAX_SEARCHES) ? "Upgrade" : `AI Scan (${MAX_SEARCHES - Number(geminiCount || 0)} free)`}
+                {(!isPro && geminiCount >= MAX_SEARCHES)
+                  ? "Upgrade"
+                  : `AI Scan ${!isPro ? `(${MAX_SEARCHES - Number(geminiCount || 0)} free)` : "(Pro)"}`}
               </Text>
-
               {!isPro && (
                 <View style={[styles.quotaBarWrapper, { width: '70%', marginTop: 4 }]}>
                   <View
@@ -615,6 +616,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             </TouchableOpacity>
           </View>
 
+          <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Intake</Text></View>
+
           {scans?.map((item) => (
             <View key={item.id} style={styles.collapsibleCard}>
               <View style={styles.cardHeader}>
@@ -627,9 +630,9 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                       {(item.protein !== undefined || item.carbs !== undefined) && (
                         <>
                           <View style={styles.miniDot} />
-                          <Text style={styles.foodCals}>Protein: {(item.protein || 0)}g</Text>
+                          <Text style={styles.foodCals}>Pro: {(item.protein || 0)}g</Text>
                           <View style={styles.miniDot} />
-                          <Text style={styles.foodCals}>Carbs: {(item.carbs || 0)}g</Text>
+                          <Text style={styles.foodCals}>Carb: {(item.carbs || 0)}g</Text>
                         </>
                       )}
                     </View>
