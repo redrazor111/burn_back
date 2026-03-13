@@ -2,9 +2,11 @@
 import { Camera } from 'expo-camera';
 import React, { ComponentProps, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
+  ActivityIndicator, // Added for Health Check
+  Alert,
   Keyboard,
   Modal,
+  Platform, // Added for Health Check
   ScrollView,
   StyleSheet,
   Text,
@@ -12,6 +14,13 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+
+// --- NEW HEALTH CONNECT IMPORTS ---
+import {
+  aggregateRecord,
+  initialize,
+  requestPermission
+} from 'react-native-health-connect';
 
 import {
   checkActivitesQuota,
@@ -37,7 +46,7 @@ import Shop from '../../components/Shop';
 import { useSubscriptionStatus } from '../../utils/subscription';
 
 import { db, silentSignIn } from '@/utils/firebaseConfig';
-import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 
 import { MAX_ACTIVITIES, MAX_MEALS, MAX_SEARCHES } from '../../utils/constants';
 
@@ -96,6 +105,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [isLoggingActivity, setIsLoggingActivity] = useState(false);
   const [isLoggingFood, setIsLoggingFood] = useState(false);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false); // New State
 
   const [selectedActivity, setSelectedActivity] = useState(ACTIVITY_TYPES[0]);
   const [activityDuration, setActivityDuration] = useState('30');
@@ -123,6 +133,87 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const { isPro } = useSubscriptionStatus();
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+
+  // --- UPDATED HEALTH SYNC LOGIC (S21 & S9 COMPATIBLE) ---
+  const handleHealthSync = async () => {
+    if (Platform.OS !== 'android') {
+      Alert.alert("Notice", "Health Connect is an Android-only feature.");
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      // 1. Initialize the SDK first
+      await initialize();
+
+      // 2. Request Permissions (Modern way)
+      const granted = await requestPermission([
+        { accessType: 'read', recordType: 'ActiveCaloriesBurned' }
+      ]);
+
+      // If user closed the permission window without granting
+      if (granted.length === 0) {
+        Alert.alert("Permission Denied", "Please allow calorie reading in Health Connect settings.");
+        setIsSyncing(false);
+        return;
+      }
+
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      // 3. Aggregate Data
+      const aggregation = await aggregateRecord({
+        recordType: 'ActiveCaloriesBurned',
+        timeRangeFilter: {
+          operator: 'between',
+          startTime: startOfDay.toISOString(),
+          endTime: new Date().toISOString(),
+        },
+      });
+
+      // Accessing the sum (Modern SDKs use inKilocalories)
+      const burnedCals = Math.round(
+        aggregation?.ACTIVE_CALORIES_TOTAL?.inCalories ||
+        aggregation?.ACTIVE_CALORIES_TOTAL.inCalories || 0
+      );
+
+      if (burnedCals > 0 && userId) {
+        // Find and delete existing sync for today to avoid double counting
+        const syncQ = query(
+          collection(db, 'users', userId, 'activities'),
+          where('type', '==', 'Health Sync'),
+          where('date', '>=', startOfDay.toISOString())
+        );
+
+        const snap = await getDocs(syncQ);
+        const delPromises = snap.docs.map(d => deleteDoc(d.ref));
+        await Promise.all(delPromises);
+
+        await addDoc(collection(db, 'users', userId, 'activities'), {
+          type: "Health Sync",
+          icon: "google-fit",
+          duration: 0,
+          caloriesBurned: burnedCals,
+          date: new Date().toISOString(),
+          createdAt: serverTimestamp(),
+        });
+
+        Alert.alert("Sync Success", `Imported ${burnedCals} active calories.`);
+      } else {
+        Alert.alert("No Data Found", "Make sure Samsung Health or Google Fit is writing 'Active Energy' to Health Connect.");
+      }
+    } catch (err) {
+      console.error("Health Sync Error:", err);
+      // More descriptive error for the user
+      Alert.alert(
+        "Connection Error",
+        "Ensure Health Connect is set up in Phone Settings > Security & Privacy > Privacy > Health Connect."
+      );
+    } finally {
+      setIsSyncing(false);
+      refreshQuotas();
+    }
+  };
 
   const refreshQuotas = async () => {
     const [mQ, gStatus, aQ, gCount] = await Promise.all([
@@ -186,7 +277,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           setIsEditingTarget(true);
         }
       }
-      setIsProfileLoading(false);
+
       isInitialLoadComplete.current = true;
       const { status } = await Camera.requestCameraPermissionsAsync();
       setHasPermission(status === 'granted');
@@ -214,6 +305,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         setTempAge(data.age || '25');
         setTempWeight(data.weight || '70');
       }
+      setIsProfileLoading(false);
+    }, (err) => {
+      console.error(err);
+      setIsProfileLoading(false);
     });
 
     const mealsQuery = query(
@@ -497,6 +592,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         <View style={styles.headerTopRow}>
           <Text style={styles.title}>Daily Dashboard</Text>
           <View style={styles.headerActions}>
+            {/* NEW SYNC BUTTON
+            <TouchableOpacity onPress={handleHealthSync} style={styles.actionBtn} disabled={isSyncing}>
+              {isSyncing ? <ActivityIndicator size="small" color="#1B4D20" /> : <MaterialCommunityIcons name="google-fit" size={28} color="#4285F4" />}
+            </TouchableOpacity>*/}
             <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
               <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />
             </TouchableOpacity>
@@ -792,7 +891,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               />
             </View>
 
-            {/* NEW ROW FOR MACROS */}
             <View style={styles.row}>
               <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
                 <Text style={styles.inputLabel}>Protein (g)</Text>
@@ -908,7 +1006,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             </View>
 
             <View style={styles.editActions}>
-              {/* Only allow cancel if they've already set up their profile once */}
               {targetCalories !== '0' && (
                 <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsEditingTarget(false)}>
                   <Text>Cancel</Text>
@@ -971,7 +1068,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   );
 }
 
-// Tab Navigator and Styles remain unchanged as per your original logic
+// Tab Navigator and Styles remain unchanged
 function AppContent() {
   const insets = useSafeAreaInsets();
   const iconMap: Record<string, any> = { Today: 'calendar-outline', "AI Scan": 'camera-outline', "Intake": 'fast-food-outline', "Burned": 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
@@ -1008,17 +1105,12 @@ const styles = StyleSheet.create({
   profileItem: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 10 },
   profileItemText: { color: '#FFF', fontSize: 11, fontWeight: '700', marginLeft: 5 },
   stripDivider: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 5 },
-  editCircle: { position: 'absolute', right: 10, backgroundColor: '#FFF', width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center' },
-  btnActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 0,
-    marginBottom: 15,
-    marginTop: 10
-  },
-  halfBtn: { flex: 0.485, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5E9', paddingVertical: 12, borderRadius: 15, borderStyle: 'dashed', borderWidth: 1, borderColor: '#C8E6C9' },
-  logActivityBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5E9', marginTop: 15, paddingVertical: 12, borderRadius: 15, borderStyle: 'dashed', borderWidth: 1, borderColor: '#C8E6C9' },
-  logActivityBtnText: { color: '#1B4D20', fontWeight: '800', marginLeft: 8 },
+  btnActionRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 0, marginBottom: 15, marginTop: 10 },
+  tripleBtn: { flex: 1, marginHorizontal: 4, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5E9', paddingVertical: 14, borderRadius: 20, borderStyle: 'dashed', borderWidth: 1, borderColor: '#C8E6C9', minHeight: 85 },
+  tripleBtnText: { color: '#1B4D20', fontWeight: '900', fontSize: 10, marginTop: 8, textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.3 },
+  logActivityBtnLocked: { backgroundColor: '#F5F5F5', borderColor: '#E0E0E0' },
+  quotaBarWrapper: { height: 3, backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: 2, overflow: 'hidden', width: '70%', marginTop: 4 },
+  quotaBarFill: { height: '100%' },
   waterTrackerContainer: { backgroundColor: '#FFF', borderRadius: 20, padding: 15, marginTop: 15, borderWidth: 1, borderColor: '#F2F2F2' },
   waterHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   waterTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: '#1A1A1A', marginLeft: 8 },
@@ -1031,126 +1123,55 @@ const styles = StyleSheet.create({
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 25, marginBottom: 10 },
   sectionTitle: { fontSize: 12, fontWeight: '800', color: '#BDBDBD', textTransform: 'uppercase', letterSpacing: 1.2 },
   collapsibleCard: { backgroundColor: '#FFF', borderRadius: 20, marginBottom: 12, borderWidth: 1, borderColor: '#F2F2F2' },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', padding: 10 },
   iconPlaceholder: { width: 45, height: 45, borderRadius: 12, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center' },
   headerInfo: { flex: 1, marginLeft: 12 },
   foodTitle: { fontSize: 16, fontWeight: '800' },
   foodCals: { fontSize: 13, color: '#2E7D32', fontWeight: '700' },
+  rowActionBtn: { padding: 8, marginLeft: 4, backgroundColor: '#F5F5F5', borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   editOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
+  editBox: { backgroundColor: '#FFF', width: '92%', padding: 25, borderRadius: 25, position: 'relative', elevation: 20, alignItems: 'center' },
   editTitle: { fontSize: 18, fontWeight: '900', marginBottom: 15, textAlign: 'center' },
-  genderPicker: { flexDirection: 'row', backgroundColor: '#F5F5F5', borderRadius: 10, padding: 3 },
-  genderBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8 },
-  genderBtnActive: { backgroundColor: '#FFF' },
-  editActions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+  inputGroup: { marginBottom: 15, width: '100%' },
+  inputLabel: { fontSize: 10, fontWeight: '800', color: '#999', marginBottom: 5, textTransform: 'uppercase' },
+  editInputSmall: { backgroundColor: '#F5F5F5', padding: 10, borderRadius: 10, fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  editActions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, width: '100%' },
   modalBtn: { flex: 0.48, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
   saveBtn: { backgroundColor: '#1B4D20' },
-  activitySelector: { flexDirection: 'row', marginBottom: 20 },
+  cancelBtn: { backgroundColor: '#F5F5F5', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  genderPicker: { flexDirection: 'row', backgroundColor: '#F5F5F5', borderRadius: 10, padding: 3, width: '100%' },
+  genderBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8 },
+  genderBtnActive: { backgroundColor: '#FFF' },
   activityTypeBtn: { alignItems: 'center', padding: 15, borderRadius: 18, backgroundColor: '#F5F5F5', marginRight: 10, width: 100, height: 100, elevation: 2 },
   activityTypeBtnActive: { backgroundColor: '#1B4D20', elevation: 4 },
   activityTypeLabel: { fontSize: 11, fontWeight: '800', marginTop: 8, color: '#1B4D20' },
   activityTypeLabelActive: { color: '#FFF' },
   scrollPadding: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 100 },
   unitSmall: { fontSize: 8, fontWeight: '700', color: '#9E9E9E' },
-  editBox: { backgroundColor: '#FFF', width: '92%', padding: 25, borderRadius: 25, position: 'relative', elevation: 20, alignItems: 'center' },
-  inputGroup: { marginBottom: 15, width: '100%' },
-  inputLabel: { fontSize: 10, fontWeight: '800', color: '#999', marginBottom: 5, textTransform: 'uppercase' },
-  editInputSmall: { backgroundColor: '#F5F5F5', padding: 10, borderRadius: 10, fontSize: 15, fontWeight: '700', textAlign: 'center' },
-  cancelBtn: { backgroundColor: '#F5F5F5', paddingVertical: 14, borderRadius: 12, alignItems: 'center', width: '100%' },
-  optionCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F5F5F5', padding: 16, borderRadius: 15, marginBottom: 10, borderWidth: 1, borderColor: '#E0E0E0' },
-  optionName: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
-  optionCal: { fontSize: 14, color: '#2E7D32', fontWeight: '700', marginTop: 2 },
+  activitySelector: { flexDirection: 'row', marginBottom: 20 },
   row: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', width: '100%' },
-  absCloseBtn: { position: 'absolute', right: 15, top: 15, zIndex: 10, padding: 5 },
   androidOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   androidSelectionBox: { width: '94%', maxHeight: '90%', backgroundColor: '#FFF', borderRadius: 20, padding: 20, elevation: 50 },
-  columnBtn: {
-    flexDirection: 'column', // Ensures vertical stacking
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 5,
-  },
-  btnMainContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8, // Creates the gap for the bar
-  },
-  activityBtnColumn: { flexDirection: 'column', paddingVertical: 12, height: 65 },
+  absCloseBtn: { position: 'absolute', right: 15, top: 15, zIndex: 10, padding: 5 },
   modalContainer: { flex: 1, backgroundColor: '#FFF' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   modalTitle: { fontSize: 24, fontWeight: '900', color: '#1B4D20' },
-  bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
+  bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center', marginBottom: 20 },
   bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   macroSummaryRow: { flexDirection: 'row', backgroundColor: '#F1F8E9', paddingVertical: 6, justifyContent: 'center', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#E8F5E9' },
   macroSummaryText: { fontSize: 10, color: '#2E7D32', fontWeight: '700', letterSpacing: 0.5 },
   dotSeparator: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#A5D6A7', marginHorizontal: 12 },
-  miniDot: { width: 2, height: 2, borderRadius: 1, backgroundColor: '#CCC', marginHorizontal: 6 },
-  tripleBtn: {
-    flex: 1,
-    marginHorizontal: 4, // Even spacing between the three
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#E8F5E9',
-    paddingVertical: 14,
-    borderRadius: 20,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    borderColor: '#C8E6C9',
-    minHeight: 85,
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FBFBFB' },
+  loadingText: { marginTop: 15, fontSize: 12, fontWeight: '800', color: '#1B4D20', textTransform: 'uppercase', letterSpacing: 1 },
+  miniDot: {
+    width: 2,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: '#CCC',
+    marginHorizontal: 6
   },
-  tripleBtnText: {
-    color: '#1B4D20',
-    fontWeight: '900',
-    fontSize: 10,
-    marginTop: 8,
-    textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3
-  },
-  iconRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  logActivityBtnLocked: {
-    backgroundColor: '#F5F5F5',
-    borderColor: '#E0E0E0'
-  },
-  quotaBarWrapper: {
-    height: 3,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  quotaBarFill: {
-    height: '100%',
-  },
-  rowActionBtn: {
-    padding: 8,
-    marginLeft: 4,
-    backgroundColor: '#F5F5F5', // Light grey background to give it weight
-    borderRadius: 10,           // Rounded square look
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,                // Slightly tighter padding
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FBFBFB',
-  },
-  loadingText: {
-    marginTop: 15,
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#1B4D20',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
+  optionCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F5F5F5', padding: 16, borderRadius: 15, marginBottom: 10, borderWidth: 1, borderColor: '#E0E0E0' },
+  optionName: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
+  optionCal: { fontSize: 14, color: '#2E7D32', fontWeight: '700', marginTop: 2 },
+
 });
