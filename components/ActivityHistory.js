@@ -181,7 +181,7 @@ export default function ActivityHistory() {
     <View style={styles.fullScreen}>
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <View style={styles.headerTopRow}>
-          <Text style={styles.title}>Calories Burned</Text>
+          <Text style={styles.title}>Burned History</Text>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={handleOpenChart} style={styles.actionBtn}>
               <MaterialCommunityIcons name="finance" size={28} color="#1B4D20" />

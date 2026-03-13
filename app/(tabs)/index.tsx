@@ -554,21 +554,11 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               style={[styles.tripleBtn, (!isPro && mealQuotaCount >= MAX_MEALS) && styles.logActivityBtnLocked]}
               onPress={handleOpenFoodLogger}
             >
-              <View style={styles.iconRow}>
-                <MaterialCommunityIcons
-                  name={((!isPro && mealQuotaCount >= MAX_MEALS) ? "lock" : "food-apple") as any}
-                  size={20}
-                  color={(!isPro && mealQuotaCount >= MAX_MEALS) ? "#9E9E9E" : "#1B4D20"}
-                />
-                {(!isPro && mealQuotaCount < MAX_MEALS) && (
-                  <MaterialCommunityIcons
-                    name={"cup-water" as any}
-                    size={16}
-                    color="#1B4D20"
-                    style={{ marginLeft: -4 }}
-                  />
-                )}
-              </View>
+              <MaterialCommunityIcons
+                name={((!isPro && mealQuotaCount >= MAX_MEALS) ? "lock" : "food-apple") as any}
+                size={22}
+                color={(!isPro && mealQuotaCount >= MAX_MEALS) ? "#9E9E9E" : "#1B4D20"}
+              />
               <Text style={styles.tripleBtnText}>{(!isPro && mealQuotaCount >= MAX_MEALS) ? `Upgrade` : "Intake"}</Text>
             </TouchableOpacity>
 
@@ -984,14 +974,14 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 // Tab Navigator and Styles remain unchanged as per your original logic
 function AppContent() {
   const insets = useSafeAreaInsets();
-  const iconMap: Record<string, any> = { Today: 'calendar-outline', "AI Scan": 'camera-outline', "Calories Intake": 'fast-food-outline', "Calories Burned": 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
+  const iconMap: Record<string, any> = { Today: 'calendar-outline', "AI Scan": 'camera-outline', "Intake": 'fast-food-outline', "Burned": 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       <Tab.Navigator tabBarPosition="bottom" screenOptions={({ route }) => ({ tabBarActiveTintColor: '#1B4D20', tabBarInactiveTintColor: '#9E9E9E', tabBarLabelStyle: { fontSize: 10, fontWeight: '700', textTransform: 'none' }, tabBarStyle: { height: 75 + insets.bottom, paddingBottom: insets.bottom }, tabBarIcon: ({ color, focused }) => { const baseIconName = iconMap[route.name] || 'help-circle-outline'; const finalIconName = focused ? baseIconName.replace('-outline', '') : baseIconName; return <Ionicons name={finalIconName as any} size={24} color={color} />; }, })}>
         <Tab.Screen name="Today">{() => <SummaryScreen />}</Tab.Screen>
         <Tab.Screen name="AI Scan">{() => <CameraScreen />}</Tab.Screen>
-        <Tab.Screen name="Calories Intake">{() => <ScanHistory />}</Tab.Screen>
-        <Tab.Screen name="Calories Burned">{() => <ActivityHistory />}</Tab.Screen>
+        <Tab.Screen name="Intake">{() => <ScanHistory />}</Tab.Screen>
+        <Tab.Screen name="Burned">{() => <ActivityHistory />}</Tab.Screen>
       </Tab.Navigator>
     </View>
   );
