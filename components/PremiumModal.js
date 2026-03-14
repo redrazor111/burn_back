@@ -79,7 +79,8 @@ export default function PremiumModal({ visible, onClose }) {
 
           <View style={styles.featureList}>
             {[
-              "Unlimited Scans",
+              "Unlimited AI Scans",
+              "Unlimited AI Text",
               "View Graphical Analysis screen",
               "Sync to Health Apps"
             ].map((feature, index) => (
