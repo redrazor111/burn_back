@@ -84,7 +84,7 @@ export default function CameraScreen() {
 
     setIsLoading(true);
     try {
-      const rawResponse = await analyzeImageWithGemini(base64Data, isPro);
+      const rawResponse = await analyzeImageWithGemini(isPro, undefined, base64Data, undefined);
       const data = JSON.parse(rawResponse);
       await incrementQuota();
       setPendingResult({ options: data.identifiedOptions, rawResult: data });

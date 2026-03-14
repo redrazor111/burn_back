@@ -1,9 +1,10 @@
 const VERCEL_API_URL = "https://burn-back.vercel.app/api/analyze";
 
 export const analyzeImageWithGemini = async (
-  base64Data: string,
   isPro: boolean,
-  userContext: { gender: string; age: string; targetCalories: string }
+  userContext: { gender: string; age: string; targetCalories: string },
+  base64Data?: string,
+  textQuery?: string
 ) => {
   try {
     const response = await fetch(VERCEL_API_URL, {
@@ -12,9 +13,10 @@ export const analyzeImageWithGemini = async (
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        base64Data: base64Data, // Fixed: use the parameter name
+        base64Data: base64Data || null,
+        textQuery: textQuery || null,
         isPro: isPro,
-        userContext: userContext // Pass the gender, age, and goal
+        userContext: userContext
       })
     });
 

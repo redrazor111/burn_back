@@ -22,6 +22,7 @@ import {
   requestPermission
 } from 'react-native-health-connect';
 
+import { analyzeImageWithGemini } from '@/utils/geminiService';
 import {
   checkActivitesQuota,
   checkMealsQuota,
@@ -29,8 +30,10 @@ import {
   decrementMealsQuota,
   getGeminiCount,
   incrementActivitesQuota,
-  incrementMealsQuota
+  incrementMealsQuota,
+  incrementQuota
 } from '@/utils/quotaService';
+
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -106,6 +109,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [isLoggingFood, setIsLoggingFood] = useState(false);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false); // New State
+  const [isAITextModal, setIsAITextModal] = useState(false);
+  const [aiTextQuery, setAiTextQuery] = useState('');
 
   const [selectedActivity, setSelectedActivity] = useState(ACTIVITY_TYPES[0]);
   const [activityDuration, setActivityDuration] = useState('30');
@@ -407,7 +412,13 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const handleAddActivity = async () => {
     if (!userId) return;
 
-    // Only check quota if we are creating a NEW activity
+    const mins = parseInt(activityDuration);
+    // VALIDATION: Prevent 0 or empty minutes
+    if (isNaN(mins) || mins <= 0) {
+      Alert.alert("Invalid Duration", "Please enter a duration greater than 0 minutes.");
+      return;
+    }
+
     if (!editingActivityId) {
       const currentActCount = await checkActivitesQuota();
       if (!isPro && currentActCount >= MAX_ACTIVITIES) {
@@ -415,14 +426,11 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       }
     }
 
-    const mins = parseInt(activityDuration);
-    if (isNaN(mins) || mins <= 0) return;
     const burnPerMin = (selectedActivity.met * parseFloat(weight) * 3.5) / 200;
     const totalBurned = Math.round(burnPerMin * mins);
 
     try {
       if (editingActivityId) {
-        // UPDATE Activity
         await setDoc(doc(db, 'users', userId, 'activities', editingActivityId), {
           type: selectedActivity.label,
           icon: selectedActivity.icon,
@@ -431,7 +439,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           updatedAt: serverTimestamp(),
         }, { merge: true });
       } else {
-        // CREATE Activity
         await addDoc(collection(db, 'users', userId, 'activities'), {
           type: selectedActivity.label,
           icon: selectedActivity.icon,
@@ -445,21 +452,69 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
       await refreshQuotas();
       setIsLoggingActivity(false);
-      setEditingActivityId(null); // Clear edit state
+      setEditingActivityId(null);
     } catch (e) { console.error(e); }
+  };
+
+  const handleAITextSearch = async () => {
+    if (!isPro) {
+      const status = await checkQuota();
+      if (status === 'LIMIT_REACHED') {
+        setIsAITextModal(false);
+        setShowPremium(true);
+        return;
+      }
+    }
+
+    if (!aiTextQuery.trim()) return;
+
+    setIsLoading(true);
+    setIsAITextModal(false);
+
+    try {
+      // Pass null for base64Data, and the query for textQuery
+      const rawResponse = await analyzeImageWithGemini(
+        isPro,
+        { gender, age, targetCalories },
+        undefined,
+        aiTextQuery
+      );
+
+      const data = JSON.parse(rawResponse);
+      await incrementQuota();
+      setPendingResult({ options: data.identifiedOptions, rawResult: data });
+
+    } catch (e) {
+      console.error("AI Text Error:", e);
+    } finally {
+      setIsLoading(false);
+      setAiTextQuery('');
+      refreshQuotas();
+    }
   };
 
   const handleManualFoodLog = async () => {
     if (!userId) return;
+
+    // Validation
+    const cals = parseInt(manualFoodCals);
+    if (!manualFoodName.trim()) {
+      Alert.alert("Missing Info", "Please enter a food or drink name.");
+      return;
+    }
+    if (isNaN(cals) || cals <= 0) {
+      Alert.alert("Invalid Calories", "Please enter a valid calorie amount greater than 0.");
+      return;
+    }
+
     const currentCount = await checkMealsQuota();
     if (!isPro && currentCount >= MAX_MEALS) {
       setIsLoggingFood(false); setShowPremium(true); return;
     }
-    const cals = parseInt(manualFoodCals);
+
     const protein = parseInt(manualFoodProtein) || 0;
     const carbs = parseInt(manualFoodCarbs) || 0;
 
-    if (!manualFoodName || isNaN(cals)) return;
     try {
       const docRef = await addDoc(collection(db, 'users', userId, 'meals'), {
         productName: manualFoodName,
@@ -527,9 +582,19 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
   const confirmSelection = async (option: { name: string; calories: number; protein: number; carbs: number }) => {
     if (!userId) return;
+
+    // Validation
+    if (!option.name.trim()) {
+      Alert.alert("Missing Info", "Product name cannot be empty.");
+      return;
+    }
+    if (isNaN(option.calories) || option.calories <= 0) {
+      Alert.alert("Invalid Calories", "Calories must be a valid number greater than 0.");
+      return;
+    }
+
     try {
       if (editingMealId) {
-        // UPDATE existing document
         const mealRef = doc(db, 'users', userId, 'meals', editingMealId);
         await setDoc(mealRef, {
           productName: option.name,
@@ -538,9 +603,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           carbs: option.carbs,
           updatedAt: serverTimestamp(),
         }, { merge: true });
-        console.log("Meal Updated");
       } else {
-        // ADD new document (Current logic)
         const docRef = await addDoc(collection(db, 'users', userId, 'meals'), {
           productName: option.name,
           calories: option.calories.toString(),
@@ -560,7 +623,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         });
       }
 
-      // Reset states
       setPendingResult(null);
       setIsEditingSelection(false);
       setEditingMealId(null);
@@ -592,10 +654,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         <View style={styles.headerTopRow}>
           <Text style={styles.title}>Daily Dashboard</Text>
           <View style={styles.headerActions}>
-            {/* NEW SYNC BUTTON
+            {/* NEW SYNC BUTTON*/}
             <TouchableOpacity onPress={handleHealthSync} style={styles.actionBtn} disabled={isSyncing}>
-              {isSyncing ? <ActivityIndicator size="small" color="#1B4D20" /> : <MaterialCommunityIcons name="google-fit" size={28} color="#4285F4" />}
-            </TouchableOpacity>*/}
+              {isSyncing ? <ActivityIndicator size="small" color="#1B4D20" /> : <MaterialCommunityIcons name="google-fit" size={28} color="#1B4D20" />}
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
               <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />
             </TouchableOpacity>
@@ -650,7 +712,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           <View style={styles.btnActionRow}>
             {/* LOG MEALS */}
             <TouchableOpacity
-              style={[styles.tripleBtn, (!isPro && mealQuotaCount >= MAX_MEALS) && styles.logActivityBtnLocked]}
+              style={[styles.quadBtn, (!isPro && mealQuotaCount >= MAX_MEALS) && styles.logActivityBtnLocked]}
               onPress={handleOpenFoodLogger}
             >
               <MaterialCommunityIcons
@@ -663,7 +725,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
             {/* LOG ACTIVITY */}
             <TouchableOpacity
-              style={[styles.tripleBtn, (!isPro && activityQuotaCount >= MAX_ACTIVITIES) && styles.logActivityBtnLocked]}
+              style={[styles.quadBtn, (!isPro && activityQuotaCount >= MAX_ACTIVITIES) && styles.logActivityBtnLocked]}
               onPress={handleOpenActivityLogger}
             >
               <MaterialCommunityIcons
@@ -676,7 +738,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
             {/* AI SCAN */}
             <TouchableOpacity
-              style={[styles.tripleBtn, (!isPro && geminiCount >= MAX_SEARCHES) && styles.logActivityBtnLocked]}
+              style={[styles.quadBtn, (!isPro && geminiCount >= MAX_SEARCHES) && styles.logActivityBtnLocked]}
               onPress={handleOpenScanScanner}
             >
               <MaterialCommunityIcons
@@ -691,6 +753,37 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               </Text>
               {!isPro && (
                 <View style={[styles.quotaBarWrapper, { width: '70%', marginTop: 4 }]}>
+                  <View
+                    style={[
+                      styles.quotaBarFill,
+                      {
+                        width: `${Math.min(100, (Number(geminiCount || 0) / MAX_SEARCHES) * 100)}%`,
+                        backgroundColor: geminiCount >= MAX_SEARCHES ? '#FF5252' : '#4CAF50'
+                      }
+                    ]}
+                  />
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* NEW AI TEXT BUTTON */}
+            <TouchableOpacity
+              style={[styles.quadBtn, (!isPro && geminiCount >= MAX_SEARCHES) && styles.logActivityBtnLocked]}
+              onPress={() => (geminiCount >= MAX_SEARCHES && !isPro) ? setShowPremium(true) : setIsAITextModal(true)}
+            >
+              <MaterialCommunityIcons
+                name={(!isPro && geminiCount >= MAX_SEARCHES) ? "lock" : "text-search"}
+                size={22}
+                color={(!isPro && geminiCount >= MAX_SEARCHES) ? "#9E9E9E" : "#1B4D20"}
+              />
+              <Text style={styles.tripleBtnText}>
+                {(!isPro && geminiCount >= MAX_SEARCHES)
+                  ? "Upgrade"
+                  : `AI Text ${!isPro ? `(${MAX_SEARCHES - Number(geminiCount || 0)} free)` : "(Pro)"}`}
+              </Text>
+
+              {!isPro && (
+                <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4 }]}>
                   <View
                     style={[
                       styles.quotaBarFill,
@@ -877,6 +970,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 value={manualFoodName}
                 onChangeText={setManualFoodName}
                 placeholder="e.g. Protein Shake"
+                placeholderTextColor="#999"
               />
             </View>
 
@@ -1063,6 +1157,31 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      <Modal visible={isAITextModal} transparent animationType="slide">
+        <View style={styles.editOverlay}>
+          <View style={styles.editBox}>
+            <Text style={styles.editTitle}>Describe your Meal</Text>
+            <TextInput
+              style={[styles.editInputSmall, { textAlign: 'left', height: 100 }]}
+              placeholder="e.g. 2 eggs on sourdough toast with half an avocado"
+              placeholderTextColor="#999"
+              multiline
+              value={aiTextQuery}
+              onChangeText={setAiTextQuery}
+            />
+            <View style={styles.editActions}>
+              <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsAITextModal(false)}>
+                <Text>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={handleAITextSearch}>
+                <Text style={{ color: '#fff' }}>Ask AI</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} />
     </View>
   );
@@ -1105,9 +1224,35 @@ const styles = StyleSheet.create({
   profileItem: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 10 },
   profileItemText: { color: '#FFF', fontSize: 11, fontWeight: '700', marginLeft: 5 },
   stripDivider: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 5 },
-  btnActionRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 0, marginBottom: 15, marginTop: 10 },
-  tripleBtn: { flex: 1, marginHorizontal: 4, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5E9', paddingVertical: 14, borderRadius: 20, borderStyle: 'dashed', borderWidth: 1, borderColor: '#C8E6C9', minHeight: 85 },
-  tripleBtnText: { color: '#1B4D20', fontWeight: '900', fontSize: 10, marginTop: 8, textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.3 },
+  btnActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 0,
+    marginBottom: 15,
+    marginTop: 10
+  },
+  quadBtn: {
+    flex: 1,
+    marginHorizontal: 2, // Reduced margin to fit 4
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8F5E9',
+    paddingVertical: 12,
+    borderRadius: 15,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+    minHeight: 80
+  },
+  tripleBtnText: {
+    color: '#1B4D20',
+    fontWeight: '900',
+    fontSize: 9, // Slightly smaller font to prevent wrapping
+    marginTop: 6,
+    textAlign: 'center',
+    textTransform: 'uppercase'
+  },
   logActivityBtnLocked: { backgroundColor: '#F5F5F5', borderColor: '#E0E0E0' },
   quotaBarWrapper: { height: 3, backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: 2, overflow: 'hidden', width: '70%', marginTop: 4 },
   quotaBarFill: { height: '100%' },
@@ -1134,7 +1279,14 @@ const styles = StyleSheet.create({
   editTitle: { fontSize: 18, fontWeight: '900', marginBottom: 15, textAlign: 'center' },
   inputGroup: { marginBottom: 15, width: '100%' },
   inputLabel: { fontSize: 10, fontWeight: '800', color: '#999', marginBottom: 5, textTransform: 'uppercase' },
-  editInputSmall: { backgroundColor: '#F5F5F5', padding: 10, borderRadius: 10, fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  editInputSmall: {
+    backgroundColor: '#F5F5F5',
+    padding: 10,
+    borderRadius: 10,
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center'
+  },
   editActions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, width: '100%' },
   modalBtn: { flex: 0.48, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
   saveBtn: { backgroundColor: '#1B4D20' },
