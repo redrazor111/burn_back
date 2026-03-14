@@ -5,8 +5,7 @@ import {
   ActivityIndicator, // Added for Health Check
   Alert,
   Keyboard,
-  Modal,
-  Platform, // Added for Health Check
+  Modal, // Added for Health Check
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +14,6 @@ import {
   View
 } from 'react-native';
 
-// --- NEW HEALTH CONNECT IMPORTS ---
 import {
   aggregateRecord,
   initialize,
@@ -139,51 +137,49 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
 
-  // --- UPDATED HEALTH SYNC LOGIC (S21 & S9 COMPATIBLE) ---
   const handleHealthSync = async () => {
-    if (Platform.OS !== 'android') {
-      Alert.alert("Notice", "Health Connect is an Android-only feature.");
-      return;
-    }
-
     setIsSyncing(true);
     try {
-      // 1. Initialize the SDK first
       await initialize();
 
-      // 2. Request Permissions (Modern way)
       const granted = await requestPermission([
-        { accessType: 'read', recordType: 'ActiveCaloriesBurned' }
+        { accessType: 'read', recordType: 'TotalCaloriesBurned' }
       ]);
 
-      // If user closed the permission window without granting
-      if (granted.length === 0) {
-        Alert.alert("Permission Denied", "Please allow calorie reading in Health Connect settings.");
+      const totalCaloriesBurned = granted.some(
+        (p: any) => p.recordType === 'TotalCaloriesBurned'
+      );
+
+      if (!totalCaloriesBurned) {
+        Alert.alert(
+          "Permission Required",
+          "Please enable 'Total Calories Burned' in the Health Connect menu."
+        );
         setIsSyncing(false);
         return;
       }
 
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
+      const now = new Date();
 
-      // 3. Aggregate Data
       const aggregation = await aggregateRecord({
-        recordType: 'ActiveCaloriesBurned',
+        recordType: 'TotalCaloriesBurned',
         timeRangeFilter: {
           operator: 'between',
           startTime: startOfDay.toISOString(),
-          endTime: new Date().toISOString(),
+          endTime: now.toISOString(),
         },
       });
 
-      // Accessing the sum (Modern SDKs use inKilocalories)
-      const burnedCals = Math.round(
-        aggregation?.ACTIVE_CALORIES_TOTAL?.inCalories ||
-        aggregation?.ACTIVE_CALORIES_TOTAL.inCalories || 0
-      );
+      let totalBurned = 0;
+      if (aggregation?.ENERGY_TOTAL) {
+        totalBurned = Math.round(
+          aggregation.ENERGY_TOTAL.inKilocalories
+        );
+      }
 
-      if (burnedCals > 0 && userId) {
-        // Find and delete existing sync for today to avoid double counting
+      if (totalBurned > 0 && userId) {
         const syncQ = query(
           collection(db, 'users', userId, 'activities'),
           where('type', '==', 'Health Sync'),
@@ -194,26 +190,24 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         const delPromises = snap.docs.map(d => deleteDoc(d.ref));
         await Promise.all(delPromises);
 
+        // 4. Save to Firestore
         await addDoc(collection(db, 'users', userId, 'activities'), {
           type: "Health Sync",
           icon: "google-fit",
           duration: 0,
-          caloriesBurned: burnedCals,
+          caloriesBurned: totalBurned,
           date: new Date().toISOString(),
           createdAt: serverTimestamp(),
         });
 
-        Alert.alert("Sync Success", `Imported ${burnedCals} active calories.`);
+        Alert.alert("Sync Success", `Imported ${totalBurned} active calories from Google Fit.`);
       } else {
-        Alert.alert("No Data Found", "Make sure Samsung Health or Google Fit is writing 'Active Energy' to Health Connect.");
+        Alert.alert("No Data Found", "No active calories recorded in Health Connect for today yet. Make sure Google Fit is syncing to Health Connect.");
       }
-    } catch (err) {
-      console.error("Health Sync Error:", err);
-      // More descriptive error for the user
-      Alert.alert(
-        "Connection Error",
-        "Ensure Health Connect is set up in Phone Settings > Security & Privacy > Privacy > Health Connect."
-      );
+
+    } catch (err: any) {
+      const errorMessage = typeof err === 'string' ? err : (err.message || "Unknown Error");
+      Alert.alert("Sync Error", errorMessage);
     } finally {
       setIsSyncing(false);
       refreshQuotas();
@@ -855,12 +849,14 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                   </View>
                 </View>
 
-                <TouchableOpacity
-                  onPress={() => handleEditActivity(act)}
-                  style={styles.rowActionBtn}
-                >
-                  <MaterialCommunityIcons name="pencil" size={18} color="#1B4D20" />
-                </TouchableOpacity>
+                {act.type !== "Health Sync" && (
+                  <TouchableOpacity
+                    onPress={() => handleEditActivity(act)}
+                    style={styles.rowActionBtn}
+                  >
+                    <MaterialCommunityIcons name="pencil" size={18} color="#1B4D20" />
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
                   onPress={() => deleteActivity(act.id)}
                   style={[styles.rowActionBtn, { backgroundColor: '#FFEBEE' }]}

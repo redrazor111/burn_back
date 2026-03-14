@@ -2,7 +2,7 @@
   "expo": {
     "name": "BurnBack",
     "slug": "burn_back",
-    "version": "1.0.17",
+    "version": "1.0.18",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "burnback",
@@ -21,7 +21,7 @@
         "BILLING",
         "INTERNET",
         "com.google.android.gms.permission.AD_ID",
-        "android.permission.health.READ_ACTIVE_CALORIES_BURNED"
+        "android.permission.health.READ_TOTAL_CALORIES_BURNED"
       ],
       "googleServicesFile": "./google-services.json"
     },
@@ -45,7 +45,7 @@
         "react-native-health-connect",
         {
           "permissions": [
-            "ActiveCaloriesBurned"
+            "TotalCaloriesBurned"
           ]
         }
       ],
@@ -58,7 +58,8 @@
             "minSdkVersion": 26
           }
         }
-      ]
+      ],
+      "expo-health-connect"
     ],
     "experiments": {
       "typedRoutes": true,
