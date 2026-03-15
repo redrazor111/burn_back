@@ -2,7 +2,7 @@
   "expo": {
     "name": "BurnBack",
     "slug": "burn_back",
-    "version": "1.0.19",
+    "version": "1.0.20",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "burnback",

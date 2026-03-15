@@ -339,13 +339,29 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     };
   }, [userId]);
 
+  useEffect(() => {
+    const disableSyncIfNonPro = async () => {
+      if (!isPro && autoSyncEnabled && userId) {
+        setAutoSyncEnabled(false);
+        try {
+          await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
+            autoSyncEnabled: false
+          }, { merge: true });
+        } catch (e) {
+          console.error("Failed to disable sync on premium loss:", e);
+        }
+      }
+    };
+    disableSyncIfNonPro();
+  }, [isPro, autoSyncEnabled, userId]);
+
   useFocusEffect(
     React.useCallback(() => {
       refreshQuotas();
-      if (autoSyncEnabled) {
+      if (autoSyncEnabled && isPro) {
         handleHealthSync();
       }
-    }, [autoSyncEnabled])
+    }, [autoSyncEnabled, isPro])
   );
 
   const calculateSuggestedGoal = () => {
