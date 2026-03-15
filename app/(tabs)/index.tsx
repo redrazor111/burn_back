@@ -1,5 +1,4 @@
 /* eslint-disable react/no-unescaped-entities */
-import { Camera } from 'expo-camera';
 import React, { ComponentProps, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, // Added for Health Check
@@ -109,6 +108,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [isSyncing, setIsSyncing] = useState(false); // New State
   const [isAITextModal, setIsAITextModal] = useState(false);
   const [aiTextQuery, setAiTextQuery] = useState('');
+  const [isAILoading, setIsAILoading] = useState(false);
 
   const [selectedActivity, setSelectedActivity] = useState(ACTIVITY_TYPES[0]);
   const [activityDuration, setActivityDuration] = useState('30');
@@ -119,12 +119,14 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
   const [scans, setScans] = useState<ScanResult[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [pendingResult, setPendingResult] = useState<PendingResult | null>(null);
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [showPremium, setShowPremium] = useState(false);
   const [showShop, setShowShop] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [isHealthModalVisible, setIsHealthModalVisible] = useState(false);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
   const [isEditingSelection, setIsEditingSelection] = useState(false);
   const [editName, setEditName] = useState('');
@@ -138,6 +140,11 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
 
   const handleHealthSync = async () => {
+    if (!isPro) {
+      setIsHealthModalVisible(false);
+      setShowPremium(true);
+      return;
+    }
     setIsSyncing(true);
     try {
       await initialize();
@@ -200,11 +207,16 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           createdAt: serverTimestamp(),
         });
 
-        Alert.alert("Sync Success", `Imported ${totalBurned} active calories from Google Fit.`);
-      } else {
-        Alert.alert("No Data Found", "No active calories recorded in Health Connect for today yet. Make sure Google Fit is syncing to Health Connect.");
-      }
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setLastSyncedTime(timestamp);
+        setLastSyncTime(timestamp);
 
+        if (userId) {
+          await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
+            lastSyncedTime: timestamp
+          }, { merge: true });
+        }
+      }
     } catch (err: any) {
       const errorMessage = typeof err === 'string' ? err : (err.message || "Unknown Error");
       Alert.alert("Sync Error", errorMessage);
@@ -243,43 +255,34 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           setGender(data.gender || 'Male');
           setAge(data.age || '0');
           setWeight(data.weight || '0');
+          setTempCalories(data.targetCalories || '2000');
+          setTempGender(data.gender || 'Male');
+          setTempAge(data.age || '25');
+          setTempWeight(data.weight || '70');
 
-          // If the profile exists but isNewUser is still true, show modal
-          if (data.isNewUser !== false) {
+          // Persist Sync Status
+          const isAutoSync = data.autoSyncEnabled || false;
+          setAutoSyncEnabled(isAutoSync);
+          setLastSyncedTime(data.lastSyncedTime || 'Never');
+
+          if (data.isNewUser !== false || data.targetCalories === '0') {
             setIsEditingTarget(true);
           }
 
-          // Reset daily counters if date changed
           if (data.lastSavedDate !== today) {
-            await setDoc(userRef, {
-              lastSavedDate: today,
-              waterCups: 0,
-              geminiCount: 0,
-              mealsCount: 0,
-              activitiesCount: 0
-            }, { merge: true });
+            await setDoc(userRef, { lastSavedDate: today, waterCups: 0, geminiCount: 0, mealsCount: 0, activitiesCount: 0 }, { merge: true });
+          }
+
+          if (isAutoSync && isPro) {
+            handleHealthSync();
           }
         } else {
-          await setDoc(userRef, {
-            lastSavedDate: today,
-            waterCups: 0,
-            geminiCount: 0,
-            mealsCount: 0,
-            activitiesCount: 0,
-            targetCalories: '0',
-            gender: 'Male',
-            age: '0',
-            weight: '0',
-            isNewUser: true
-          }, { merge: true });
-
+          await setDoc(userRef, { lastSavedDate: today, waterCups: 0, geminiCount: 0, mealsCount: 0, activitiesCount: 0, targetCalories: '0', gender: 'Male', age: '0', weight: '0', isNewUser: true, autoSyncEnabled: false }, { merge: true });
           setIsEditingTarget(true);
         }
       }
-
+      setIsProfileLoading(false);
       isInitialLoadComplete.current = true;
-      const { status } = await Camera.requestCameraPermissionsAsync();
-      setHasPermission(status === 'granted');
       refreshQuotas();
     };
     init();
@@ -299,10 +302,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         setAge(data.age || '25');
         setWeight(data.weight || '70');
         setWaterCups(data.waterCups || 0);
-        setTempCalories(data.targetCalories || '2000');
-        setTempGender(data.gender || 'Male');
-        setTempAge(data.age || '25');
-        setTempWeight(data.weight || '70');
+        setAutoSyncEnabled(data.autoSyncEnabled || false);
       }
       setIsProfileLoading(false);
     }, (err) => {
@@ -339,7 +339,14 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     };
   }, [userId]);
 
-  useFocusEffect(React.useCallback(() => { refreshQuotas(); }, []));
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshQuotas();
+      if (autoSyncEnabled) {
+        handleHealthSync();
+      }
+    }, [autoSyncEnabled])
+  );
 
   const calculateSuggestedGoal = () => {
     const w = parseFloat(tempWeight);
@@ -362,6 +369,21 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   const saveProfileData = async () => {
+    const cals = parseInt(tempCalories);
+    const age = parseInt(tempAge);
+    const weight = parseFloat(tempWeight);
+
+    // Validation Check
+    if (isNaN(cals) || cals <= 0) {
+      Alert.alert("Invalid Goal", "Please enter a calorie goal greater than 0.");
+      return;
+    }
+
+    if (isNaN(age) || age <= 0 || isNaN(weight) || weight <= 0) {
+      Alert.alert("Profile Incomplete", "Please enter a valid age and weight.");
+      return;
+    }
+
     try {
       if (userId) {
         await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
@@ -369,13 +391,19 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           gender: tempGender,
           age: tempAge,
           weight: tempWeight,
-          isNewUser: false, // User is no longer "New" after first save
+          isNewUser: false,
           updatedAt: serverTimestamp()
         }, { merge: true });
+
+        await refreshQuotas();
       }
+
       setIsEditingTarget(false);
       Keyboard.dismiss();
-    } catch (e) { console.error("Error saving profile:", e); }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (e) {
+      Alert.alert("Error", "Failed to save profile. Please check your connection.");
+    }
   };
 
   const adjustWater = async (amount: number) => {
@@ -462,11 +490,9 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
     if (!aiTextQuery.trim()) return;
 
-    setIsLoading(true);
-    setIsAITextModal(false);
+    setIsAILoading(true);
 
     try {
-      // Pass null for base64Data, and the query for textQuery
       const rawResponse = await analyzeImageWithGemini(
         isPro,
         { gender, age, targetCalories },
@@ -478,10 +504,12 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       await incrementQuota();
       setPendingResult({ options: data.identifiedOptions, rawResult: data });
 
+      setIsAITextModal(false);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
-      console.error("AI Text Error:", e);
+      Alert.alert("AI Error", "Failed to analyze your meal. Please try again.");
     } finally {
-      setIsLoading(false);
+      setIsAILoading(false);
       setAiTextQuery('');
       refreshQuotas();
     }
@@ -648,9 +676,21 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         <View style={styles.headerTopRow}>
           <Text style={styles.title}>Daily Dashboard</Text>
           <View style={styles.headerActions}>
-            {/* NEW SYNC BUTTON*/}
-            <TouchableOpacity onPress={handleHealthSync} style={styles.actionBtn} disabled={isSyncing}>
-              {isSyncing ? <ActivityIndicator size="small" color="#1B4D20" /> : <MaterialCommunityIcons name="google-fit" size={28} color="#1B4D20" />}
+            <TouchableOpacity
+              onPress={() => {
+                if (!isPro) {
+                  setShowPremium(true);
+                } else {
+                  setIsHealthModalVisible(true);
+                }
+              }}
+              style={styles.actionBtn}
+            >
+              <MaterialCommunityIcons
+                name="google-fit"
+                size={28}
+                color={autoSyncEnabled ? "#2196F3" : "#1B4D20"}
+              />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
               <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />
@@ -791,6 +831,16 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               )}
             </TouchableOpacity>
           </View>
+
+          {lastSyncTime && (
+            <View style={styles.syncRow}>
+              <View style={styles.syncIndicator} />
+              <Text style={styles.syncText}>Synced with Health at {lastSyncTime}</Text>
+              <TouchableOpacity onPress={handleHealthSync} style={styles.refreshIcon}>
+                <Text style={{ fontSize: 12, color: '#1B4D20', fontWeight: '600' }}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Intake</Text></View>
 
@@ -1157,21 +1207,107 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       <Modal visible={isAITextModal} transparent animationType="slide">
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>
-            <Text style={styles.editTitle}>Describe your Meal</Text>
-            <TextInput
-              style={[styles.editInputSmall, { textAlign: 'left', height: 100 }]}
-              placeholder="e.g. 2 eggs on sourdough toast with half an avocado"
-              placeholderTextColor="#999"
-              multiline
-              value={aiTextQuery}
-              onChangeText={setAiTextQuery}
-            />
-            <View style={styles.editActions}>
-              <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsAITextModal(false)}>
-                <Text>Cancel</Text>
+            {isAILoading ? (
+              <View style={{ paddingVertical: 30, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#1B4D20" />
+                <Text style={[styles.editTitle, { marginTop: 20 }]}>AI is thinking...</Text>
+                <Text style={{ color: '#666', textAlign: 'center', fontSize: 13 }}>
+                  Calculating nutrition for your description
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.editTitle}>Describe your Meal</Text>
+                <TextInput
+                  style={[styles.editInputSmall, { textAlign: 'left', height: 100, paddingTop: 12 }]}
+                  placeholder="e.g. 2 eggs on sourdough toast with half an avocado"
+                  placeholderTextColor="#999"
+                  multiline
+                  value={aiTextQuery}
+                  onChangeText={setAiTextQuery}
+                  editable={!isAILoading}
+                />
+                <View style={styles.editActions}>
+                  <TouchableOpacity
+                    style={[styles.modalBtn, styles.cancelBtn]}
+                    onPress={() => setIsAITextModal(false)}
+                    disabled={isAILoading}
+                  >
+                    <Text style={{ fontWeight: '700', color: '#666' }}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalBtn, styles.saveBtn]}
+                    onPress={handleAITextSearch}
+                    disabled={isAILoading}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '800' }}>Ask AI</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* UPDATED HEALTH SETTINGS MODAL */}
+      <Modal visible={isHealthModalVisible} transparent animationType="slide">
+        <View style={styles.editOverlay}>
+          <View style={styles.editBox}>
+            <MaterialCommunityIcons name="google-fit" size={50} color={autoSyncEnabled ? "#2196F3" : "#1B4D20"} />
+            <Text style={styles.editTitle}>Health Connect Sync</Text>
+
+            {/* LAST SYNCED BADGE */}
+            <View style={{ backgroundColor: '#E3F2FD', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 10, marginBottom: 10 }}>
+              <Text style={{ fontSize: 11, color: '#1976D2', fontWeight: '800' }}>
+                LAST SYNCED: {lastSyncedTime}
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginVertical: 10 }}>
+              <View>
+                <Text style={{ fontWeight: '700', color: '#333' }}>Auto-Sync on Load</Text>
+                <Text style={{ fontSize: 10, color: '#999' }}>Samsung Health & Google Fit</Text>
+              </View>
+              <TouchableOpacity
+                onPress={async () => {
+                  if (!isPro) {
+                    setIsHealthModalVisible(false);
+                    setShowPremium(true);
+                    return;
+                  }
+                  const newValue = !autoSyncEnabled;
+                  setAutoSyncEnabled(newValue);
+                  if (userId) {
+                    await setDoc(doc(db, 'users', userId, 'profile', 'data'), { autoSyncEnabled: newValue }, { merge: true });
+                  }
+                }}
+              >
+                <MaterialCommunityIcons
+                  name={autoSyncEnabled ? "toggle-switch" : "toggle-switch-off"}
+                  size={50}
+                  color={autoSyncEnabled ? "#4CAF50" : "#CCC"}
+                />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={handleAITextSearch}>
-                <Text style={{ color: '#fff' }}>Ask AI</Text>
+            </View>
+
+            <Text style={{ fontSize: 12, color: '#666', textAlign: 'center', marginBottom: 20, paddingHorizontal: 10 }}>
+              Syncs total calories burned today from your wearable devices and health apps.
+            </Text>
+
+            <View style={styles.editActions}>
+              <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsHealthModalVisible(false)}>
+                <Text style={{ fontWeight: '700' }}>Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.saveBtn, { backgroundColor: isSyncing ? '#999' : '#1B4D20' }]}
+                onPress={handleHealthSync}
+                disabled={isSyncing}
+              >
+                {isSyncing ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={{ color: '#fff', fontWeight: '800' }}>Sync Now</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1321,5 +1457,34 @@ const styles = StyleSheet.create({
   optionCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F5F5F5', padding: 16, borderRadius: 15, marginBottom: 10, borderWidth: 1, borderColor: '#E0E0E0' },
   optionName: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
   optionCal: { fontSize: 14, color: '#2E7D32', fontWeight: '700', marginTop: 2 },
-
+  syncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    marginBottom: 5,
+    backgroundColor: '#F0F7F0',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    alignSelf: 'center',
+  },
+  syncIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#4CAF50', // Green dot
+    marginRight: 6,
+  },
+  syncText: {
+    fontSize: 11,
+    color: '#666',
+    fontWeight: '500',
+  },
+  refreshIcon: {
+    marginLeft: 8,
+    borderLeftWidth: 1,
+    borderLeftColor: '#DDD',
+    paddingLeft: 8,
+  }
 });
