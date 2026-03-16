@@ -109,11 +109,11 @@ export default function ScanHistory() {
 
   // Handler for Chart Icon
   const handleOpenChart = () => {
-    // if (isPro) {
-    setShowChart(true);
-    // } else {
-    //   setShowPremium(true);
-    // }
+    if (isPro) {
+      setShowChart(true);
+    } else {
+      setShowPremium(true);
+    }
   };
 
   // Meals Listener
