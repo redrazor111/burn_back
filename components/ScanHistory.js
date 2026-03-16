@@ -60,6 +60,7 @@ export default function ScanHistory() {
   const [timeframe, setTimeframe] = useState(7);
   const [showPremium, setShowPremium] = useState(false);
   const [targetCalories, setTargetCalories] = useState(2000);
+  const [weight, setWeight] = useState(70);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -100,7 +101,7 @@ export default function ScanHistory() {
     return () => unsubscribe();
   }, [userId]);
 
-  // Profile Listener for targetCalories
+  // Profile Listener for targetCalories and weight
   useEffect(() => {
     if (!userId) return;
     const userRef = doc(db, 'users', userId, 'profile', 'data');
@@ -108,6 +109,7 @@ export default function ScanHistory() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.targetCalories) setTargetCalories(Number(data.targetCalories));
+        if (data.weight) setWeight(Number(data.weight)); // Capture weight here
       }
     });
     return () => unsubscribe();
@@ -134,20 +136,39 @@ export default function ScanHistory() {
   }, [history]);
 
   const analysisData = useMemo(() => {
-    const data = [];
+    const proteinData = [];
+    const carbsData = [];
     const labels = [];
     const now = new Date();
+
     for (let i = timeframe - 1; i >= 0; i--) {
       const d = new Date();
       d.setDate(now.getDate() - i);
       const key = getSafeDateKey(d.toISOString());
       const stats = groupedData[key] || { totalProtein: 0, totalCarbs: 0 };
-      data.push([Number(stats.totalProtein), Number(stats.totalCarbs)]);
+
+      proteinData.push([Number(stats.totalProtein)]);
+      carbsData.push([Number(stats.totalCarbs)]);
+
       if (timeframe === 7) labels.push(getOrdinalDate(d));
       else if (i % 14 === 0) labels.push(`${d.getDate()}/${d.getMonth() + 1}`);
       else labels.push("");
     }
-    return { stackedData: { labels, legend: ["Prot (g)", "Carb (g)"], data, barColors: ["#1B4D20", "#81C784"] } };
+
+    return {
+      proteinChart: {
+        labels,
+        legend: ["Protein (g)"],
+        data: proteinData,
+        barColors: ["#1B4D20"]
+      },
+      carbsChart: {
+        labels,
+        legend: ["Carbs (g)"],
+        data: carbsData,
+        barColors: ["#81C784"]
+      }
+    };
   }, [groupedData, timeframe]);
 
   const todayStats = useMemo(() => {
@@ -155,24 +176,69 @@ export default function ScanHistory() {
     return groupedData[todayKey] || { totalCalories: 0, totalProtein: 0, totalCarbs: 0 };
   }, [groupedData]);
 
-  const { chartData, monthlyAverage, dailyAverage } = useMemo(() => {
+  const {
+    chartData,
+    monthlyAverage,
+    dailyAverage,
+    avgProtein,
+    avgCarbs,
+    weightProjectionLbs,
+    weightProjectionKg,
+    proteinGoalMet,
+    dailyProteinGoal
+  } = useMemo(() => {
     const dailyValues = [];
+    const dailyProtein = [];
+    const dailyCarbs = [];
     const labels = [];
     const now = new Date();
+
     for (let i = timeframe - 1; i >= 0; i--) {
       const d = new Date();
       d.setDate(now.getDate() - i);
       const key = getSafeDateKey(d.toISOString());
-      const val = groupedData[key]?.totalCalories || 0;
-      dailyValues.push(Number(val));
+      const dayData = groupedData[key] || { totalCalories: 0, totalProtein: 0, totalCarbs: 0 };
+
+      dailyValues.push(Number(dayData.totalCalories));
+      dailyProtein.push(Number(dayData.totalProtein));
+      dailyCarbs.push(Number(dayData.totalCarbs));
+
       if (timeframe === 7) labels.push(getOrdinalDate(d));
       else if (i % 14 === 0) labels.push(`${d.getDate()}/${d.getMonth() + 1}`);
       else labels.push("");
     }
-    const activeDays = dailyValues.filter(v => v > 0);
-    const dAvg = activeDays.length > 0 ? Math.round(activeDays.reduce((a, b) => a + b, 0) / activeDays.length) : 0;
-    return { dailyAverage: dAvg, monthlyAverage: dAvg * 30, chartData: { labels, datasets: [{ data: dailyValues, color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`, strokeWidth: 2 }], legend: [timeframe === 7 ? "7-Day Intake" : "60-Day Intake"] } };
-  }, [groupedData, timeframe]);
+
+    // Identify "Active Days" (days where the user actually logged something)
+    const activeDaysCount = dailyValues.filter(v => v > 0).length;
+
+    const dAvg = activeDaysCount > 0 ? Math.round(dailyValues.reduce((a, b) => a + b, 0) / activeDaysCount) : 0;
+    const pAvg = activeDaysCount > 0 ? Math.round(dailyProtein.reduce((a, b) => a + b, 0) / activeDaysCount) : 0;
+    const cAvg = activeDaysCount > 0 ? Math.round(dailyCarbs.reduce((a, b) => a + b, 0) / activeDaysCount) : 0;
+
+    const monthlyDiff = (dAvg - targetCalories) * 30;
+    const projectionLbs = (monthlyDiff / 3500).toFixed(1);
+    const projectionKg = (Number(projectionLbs) / 2.2046).toFixed(1);
+
+    const userWeightKg = parseFloat(weight) || 70;
+    const pGoal = Math.round(userWeightKg * 1.6);
+    const pMet = pAvg > 0 ? Math.round((pAvg / pGoal) * 100) : 0;
+
+    return {
+      dailyAverage: dAvg,
+      monthlyAverage: dAvg * 30,
+      avgProtein: pAvg,
+      avgCarbs: cAvg,
+      weightProjectionLbs: projectionLbs,
+      weightProjectionKg: projectionKg,
+      dailyProteinGoal: pGoal,
+      proteinGoalMet: pMet,
+      chartData: {
+        labels,
+        datasets: [{ data: dailyValues, color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`, strokeWidth: 2 }],
+        legend: [timeframe === 7 ? "7-Day Intake" : "60-Day Intake"]
+      }
+    };
+  }, [groupedData, timeframe, targetCalories, weight]);
 
   const chartConfig = {
     backgroundColor: "#fff",
@@ -180,12 +246,18 @@ export default function ScanHistory() {
     backgroundGradientTo: "#fff",
     decimalPlaces: 0,
     color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(100, 100, 100, ${opacity})`,
-    propsForDots: { r: "0" },
-    propsForLabels: { fontSize: 8 },
-    fillShadowGradientFrom: "#1B4D20",
-    fillShadowGradientTo: "#81C784",
-    fillShadowGradientOpacity: 0.1,
+    labelColor: (opacity = 1) => `rgba(50, 50, 50, ${opacity})`, // Darkened for better visibility
+    style: {
+      borderRadius: 16,
+    },
+    propsForBackgroundLines: {
+      strokeDasharray: "", // solid background lines for easier reading
+      stroke: "#E0E0E0"
+    },
+    propsForLabels: {
+      fontSize: 10,
+      fontWeight: "600",
+    },
     barPercentage: timeframe === 7 ? 0.6 : 0.2,
   };
 
@@ -313,13 +385,69 @@ export default function ScanHistory() {
               {chartData ? (
                 <>
                   <View style={styles.averagesContainer}>
-                    <View style={styles.avgBoxSmall}>
-                      <Text style={styles.avgLabelCenter}>DAILY AVERAGE</Text>
-                      <Text style={styles.avgValueCenter}>{dailyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                    </View>
-                    <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
-                      <Text style={styles.avgLabelCenter}>PROJECTED MONTHLY</Text>
-                      <Text style={styles.avgValueCenter}>{monthlyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                    <View style={{ flex: 1 }}>
+                      {/* ROW 1: Calories */}
+                      <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+                        <View style={styles.avgBoxSmall}>
+                          <Text style={styles.avgLabelCenter}>AVG DAILY AVG</Text>
+                          <Text style={styles.avgValueCenter}>{dailyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                        </View>
+                        <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
+                          <Text style={styles.avgLabelCenter}>PROJECTED</Text>
+                          <Text style={styles.avgValueCenter}>{monthlyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                        </View>
+                      </View>
+
+                      {/* ROW 2: Macros with Goal Indicator */}
+                      <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+                        <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9', alignItems: 'flex-start', paddingHorizontal: 12 }]}>
+                          <Text style={styles.avgLabelCenter}>AVG DAILY PROTEIN</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+                            <Text style={styles.avgValueCenter}>{avgProtein}<Text style={styles.avgUnit}>g</Text></Text>
+                            <View style={{
+                              marginLeft: 6,
+                              backgroundColor: proteinGoalMet >= 100 ? '#2E7D32' : '#81C784',
+                              paddingHorizontal: 5,
+                              borderRadius: 5
+                            }}>
+                              <Text style={{ fontSize: 9, color: '#FFF', fontWeight: '900' }}>{proteinGoalMet}%</Text>
+                            </View>
+                          </View>
+                          <Text style={{ fontSize: 8, color: '#666', marginTop: 2 }}>Goal: {dailyProteinGoal}g</Text>
+                        </View>
+
+                        <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9', alignItems: 'flex-start', paddingHorizontal: 12 }]}>
+                          <Text style={styles.avgLabelCenter}>AVG DAILY CARBS</Text>
+                          <Text style={styles.avgValueCenter}>{avgCarbs}<Text style={styles.avgUnit}>g</Text></Text>
+                          <Text style={{ fontSize: 8, color: '#666', marginTop: 2 }}>Daily Average</Text>
+                        </View>
+                      </View>
+
+                      {/* ROW 3: Weight Projection (Dual Units) */}
+                      <View style={[styles.avgBoxSmall, {
+                        backgroundColor: Number(weightProjectionLbs) > 0 ? '#FFEBEE' : '#E8F5E9',
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        paddingHorizontal: 15,
+                        marginTop: 5
+                      }]}>
+                        <Text style={[styles.avgLabelCenter, { marginBottom: 0 }]}>30-DAY FORECAST</Text>
+
+                        <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+                          <Text style={[styles.avgValueCenter, { color: Number(weightProjectionLbs) > 0 ? '#D32F2F' : '#2E7D32' }]}>
+                            {Number(weightProjectionKg) > 0 ? `+${weightProjectionKg}` : weightProjectionKg}
+                            <Text style={styles.avgUnit}> kg</Text>
+                          </Text>
+
+                          <View style={{ width: 1, height: 12, backgroundColor: 'rgba(0,0,0,0.1)', mx: 8, marginHorizontal: 8 }} />
+
+                          <Text style={[styles.avgValueCenter, { color: Number(weightProjectionLbs) > 0 ? '#D32F2F' : '#2E7D32', fontSize: 14, opacity: 0.8 }]}>
+                            {Number(weightProjectionLbs) > 0 ? `+${weightProjectionLbs}` : weightProjectionLbs}
+                            <Text style={styles.avgUnit}> lbs</Text>
+                          </Text>
+                        </View>
+                      </View>
                     </View>
                   </View>
 
@@ -355,14 +483,32 @@ export default function ScanHistory() {
                     />
                   </View>
 
+                  {/* Protein Graph */}
                   <View style={styles.comparisonCard}>
-                    <Text style={styles.comparisonTitle}>{timeframe === 7 ? "Weekly" : "60-Day"} Macros</Text>
+                    <Text style={styles.comparisonTitle}>{timeframe === 7 ? "Weekly" : "60-Day"} Protein (g)</Text>
                     <StackedBarChart
-                      data={analysisData.stackedData}
+                      data={analysisData.proteinChart}
                       width={windowWidth - 40}
-                      height={240}
+                      height={220}
                       chartConfig={chartConfig}
-                      style={{ marginVertical: 8, borderRadius: 16 }}
+                      style={{ marginVertical: 8, borderRadius: 16, paddingRight: 40 }}
+                      hideLegend={false}
+                    />
+                  </View>
+
+                  {/* Carbs Graph */}
+                  <View style={styles.comparisonCard}>
+                    <Text style={styles.comparisonTitle}>{timeframe === 7 ? "Weekly" : "60-Day"} Carbs (g)</Text>
+                    <StackedBarChart
+                      data={analysisData.carbsChart}
+                      width={windowWidth - 40}
+                      height={220}
+                      chartConfig={{
+                        ...chartConfig,
+                        fillShadowGradientFrom: "#81C784",
+                        fillShadowGradientTo: "#81C784",
+                      }}
+                      style={{ marginVertical: 8, borderRadius: 16, paddingRight: 40 }}
                       hideLegend={false}
                     />
                   </View>
