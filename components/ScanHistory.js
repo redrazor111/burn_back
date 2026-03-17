@@ -323,12 +323,19 @@ export default function ScanHistory() {
           Object.keys(groupedData).sort((a, b) => b.localeCompare(a)).map((dateKey) => (
             <View key={dateKey} style={styles.sectionContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(dateKey)} activeOpacity={0.7}>
-                <View style={styles.sectionHeaderTextGroup}>
-                  <Text style={styles.sectionLabel}>{getReadableDate(dateKey).toUpperCase()}</Text>
-                  <Text style={styles.sectionTotalCalories}>{groupedData[dateKey].totalCalories} cal</Text>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.sectionHeaderTextGroup}>
+                    <Text style={styles.sectionLabel}>{getReadableDate(dateKey).toUpperCase()}</Text>
+                    <Text style={styles.sectionTotalCalories}>{groupedData[dateKey].totalCalories} cal</Text>
+                  </View>
+                  {/* Added daily macro totals below the date/calories */}
+                  <Text style={{ fontSize: 11, color: '#666', marginTop: 2, fontWeight: '600' }}>
+                    Total: {groupedData[dateKey].totalProtein}g Protein • {groupedData[dateKey].totalCarbs}g Carbs
+                  </Text>
                 </View>
                 <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#9E9E9E" />
               </TouchableOpacity>
+
               {expandedSections[dateKey] && (
                 <View style={styles.itemsContainer}>
                   {groupedData[dateKey].items.map((item) => (
