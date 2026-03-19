@@ -550,7 +550,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
       const data = JSON.parse(rawResponse);
       await incrementQuota();
-      setPendingResult({ options: data.identifiedOptions, rawResult: data });
+      setPendingResult({
+        options: data.identifiedOptions.slice(0, 3),
+        rawResult: data
+      });
 
       setIsAITextModal(false);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
