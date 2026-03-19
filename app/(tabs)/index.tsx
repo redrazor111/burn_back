@@ -78,6 +78,8 @@ const ACTIVITY_TYPES: { label: string; met: number; icon: MaterialIconName }[] =
   { label: "Yoga", met: 2.5, icon: "yoga" },
   { label: "Rowing", met: 7.0, icon: "rowing" },
   { label: "Cardio", met: 8.0, icon: "heart-pulse" },
+  { label: "Hiking", met: 6.0, icon: "terrain" },
+  { label: "Boxing", met: 9.0, icon: "boxing-glove" },
   { label: "Other", met: 4.5, icon: "dots-horizontal" },
 ];
 
@@ -109,6 +111,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [isAITextModal, setIsAITextModal] = useState(false);
   const [aiTextQuery, setAiTextQuery] = useState('');
   const [isAILoading, setIsAILoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [selectedActivity, setSelectedActivity] = useState(ACTIVITY_TYPES[0]);
   const [activityDuration, setActivityDuration] = useState('30');
@@ -369,7 +372,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     const a = parseInt(tempAge);
 
     if (isNaN(w) || w <= 0 || isNaN(a) || a <= 0) {
-      alert("Please enter a valid Age and Weight first!");
+      alert("Please enter a valid Age and Weight.");
       return;
     }
 
@@ -385,28 +388,44 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   const saveProfileData = async () => {
-    const cals = parseInt(tempCalories);
-    const age = parseInt(tempAge);
-    const weight = parseFloat(tempWeight);
+    const cals = Number(tempCalories);
+    const age = Number(tempAge);
+    const weight = Number(tempWeight);
 
-    // Validation Check
-    if (isNaN(cals) || cals <= 0) {
-      Alert.alert("Invalid Goal", "Please enter a calorie goal greater than 0.");
+    // 1. Calorie Validation (Range: 500 - 10,000)
+    if (!Number.isInteger(cals) || cals < 500 || cals > 10000) {
+      Alert.alert(
+        "Invalid Calories",
+        "Please enter a whole number between 500 and 10,000."
+      );
       return;
     }
 
-    if (isNaN(age) || age <= 0 || isNaN(weight) || weight <= 0) {
-      Alert.alert("Profile Incomplete", "Please enter a valid age and weight.");
+    // 2. Age Validation (Range: 13 - 120)
+    if (!Number.isInteger(age) || age < 13 || age > 120) {
+      Alert.alert(
+        "Invalid Age",
+        "Please enter a valid age between 13 and 120."
+      );
+      return;
+    }
+
+    // 3. Weight Validation (Range: 30kg - 500kg)
+    if (!Number.isInteger(weight) || weight < 30 || weight > 500) {
+      Alert.alert(
+        "Invalid Weight",
+        "Please enter a weight between 30kg and 500kg."
+      );
       return;
     }
 
     try {
       if (userId) {
         await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
-          targetCalories: tempCalories,
+          targetCalories: Math.floor(cals).toString(),
           gender: tempGender,
-          age: tempAge,
-          weight: tempWeight,
+          age: Math.floor(age).toString(),
+          weight: Math.floor(weight).toString(),
           isNewUser: false,
           updatedAt: serverTimestamp()
         }, { merge: true });
@@ -416,7 +435,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
       setIsEditingTarget(false);
       Keyboard.dismiss();
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
       Alert.alert("Error", "Failed to save profile. Please check your connection.");
     }
@@ -448,40 +466,48 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   const handleAddActivity = async () => {
-    if (!userId) return;
+    if (!userId || isSaving) return;
 
-    const mins = parseInt(activityDuration);
-    // VALIDATION: Prevent 0 or empty minutes
-    if (isNaN(mins) || mins <= 0) {
-      Alert.alert("Invalid Duration", "Please enter a duration greater than 0 minutes.");
+    const mins = Number(activityDuration);
+    if (!Number.isInteger(mins) || mins <= 0 || mins > 1440) {
+      Alert.alert(
+        "Invalid Duration",
+        "Please enter a whole number of minutes (1 to 1440)."
+      );
       return;
     }
 
-    if (!editingActivityId) {
-      const currentActCount = await checkActivitesQuota();
-      if (!isPro && currentActCount >= MAX_ACTIVITIES) {
-        setIsLoggingActivity(false); setShowPremium(true); return;
-      }
-    }
-
-    const burnPerMin = (selectedActivity.met * parseFloat(weight) * 3.5) / 200;
-    const totalBurned = Math.round(burnPerMin * mins);
+    setIsSaving(true);
 
     try {
+      if (!editingActivityId) {
+        const currentActCount = await checkActivitesQuota();
+        if (!isPro && currentActCount >= MAX_ACTIVITIES) {
+          setIsLoggingActivity(false);
+          setShowPremium(true);
+          return;
+        }
+      }
+      const burnPerMin = (selectedActivity.met * parseFloat(weight) * 3.5) / 200;
+      const totalBurned = Math.round(burnPerMin * mins);
+
+      const activityData = {
+        type: selectedActivity.label,
+        icon: selectedActivity.icon,
+        duration: mins,
+        caloriesBurned: totalBurned,
+        updatedAt: serverTimestamp(),
+      };
+
       if (editingActivityId) {
-        await setDoc(doc(db, 'users', userId, 'activities', editingActivityId), {
-          type: selectedActivity.label,
-          icon: selectedActivity.icon,
-          duration: mins,
-          caloriesBurned: totalBurned,
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
+        await setDoc(
+          doc(db, 'users', userId, 'activities', editingActivityId),
+          activityData,
+          { merge: true }
+        );
       } else {
         await addDoc(collection(db, 'users', userId, 'activities'), {
-          type: selectedActivity.label,
-          icon: selectedActivity.icon,
-          duration: mins,
-          caloriesBurned: totalBurned,
+          ...activityData,
           date: new Date().toISOString(),
           createdAt: serverTimestamp(),
         });
@@ -491,7 +517,13 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       await refreshQuotas();
       setIsLoggingActivity(false);
       setEditingActivityId(null);
-    } catch (e) { console.error(e); }
+      setActivityDuration("");
+
+    } catch (e) {
+      Alert.alert("Error", "Could not save activity. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleAITextSearch = async () => {
@@ -1085,18 +1117,57 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>
             <Text style={styles.editTitle}>Log Exercise/Activity</Text>
-            <View style={{ height: 120, width: '100%', marginBottom: 10 }}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activitySelector} contentContainerStyle={{ paddingVertical: 10 }}>
-                {ACTIVITY_TYPES.map((act) => (
-                  <TouchableOpacity key={act.label} style={[styles.activityTypeBtn, selectedActivity.label === act.label && styles.activityTypeBtnActive]} onPress={() => setSelectedActivity(act)}>
-                    <MaterialCommunityIcons name={act.icon as any} size={28} color={selectedActivity.label === act.label ? "#FFF" : "#1B4D20"} />
-                    <Text style={[styles.activityTypeLabel, selectedActivity.label === act.label && styles.activityTypeLabelActive]}>{act.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+            <Text style={styles.sectionLabel}>Common Activities</Text>
+            <View style={styles.gridContainer}>
+              {ACTIVITY_TYPES.map((act) => ( // Show top 6 as quick-select
+                <TouchableOpacity
+                  key={act.label}
+                  style={[
+                    styles.gridItem,
+                    selectedActivity.label === act.label && styles.gridItemActive
+                  ]}
+                  onPress={() => setSelectedActivity(act)}
+                >
+                  <MaterialCommunityIcons
+                    name={act.icon as any}
+                    size={24}
+                    color={selectedActivity.label === act.label ? "#FFF" : "#1B4D20"}
+                  />
+                  <Text style={[
+                    styles.gridLabel,
+                    selectedActivity.label === act.label && styles.gridLabelActive
+                  ]}>
+                    {act.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
-            <View style={styles.inputGroup}><Text style={styles.inputLabel}>Duration (Minutes)</Text><TextInput style={styles.editInputSmall} value={activityDuration} onChangeText={setActivityDuration} keyboardType="numeric" /></View>
-            <View style={styles.editActions}><TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsLoggingActivity(false)}><Text>Cancel</Text></TouchableOpacity><TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={handleAddActivity}><Text style={{ color: '#fff' }}>Add</Text></TouchableOpacity></View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Duration (Minutes)</Text>
+              <TextInput
+                style={styles.editInputSmall}
+                value={activityDuration}
+                onChangeText={setActivityDuration}
+                keyboardType="numeric"
+                placeholder="30"
+              />
+            </View>
+
+            <View style={styles.editActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.cancelBtn]}
+                onPress={() => setIsLoggingActivity(false)}
+              >
+                <Text style={{ fontWeight: '600', color: '#666' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.saveBtn]}
+                onPress={handleAddActivity}
+              >
+                <Text style={{ color: '#fff', fontWeight: '800' }}>Add Activity</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}
@@ -1234,15 +1305,23 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             ) : (
               <>
                 <Text style={styles.editTitle}>Describe your Meal</Text>
-                <TextInput
-                  style={[styles.editInputSmall, { textAlign: 'left', height: 100, paddingTop: 12 }]}
-                  placeholder="e.g. 2 eggs on sourdough toast with half an avocado"
-                  placeholderTextColor="#999"
-                  multiline
-                  value={aiTextQuery}
-                  onChangeText={setAiTextQuery}
-                  editable={!isAILoading}
-                />
+
+                {/* WRAPPER: This locks the dimensions regardless of content */}
+                <View style={styles.fixedInputWrapper}>
+                  <TextInput
+                    style={styles.fixedInternalInput}
+                    placeholder="e.g. 2 eggs on sourdough toast with half an avocado"
+                    placeholderTextColor="#999"
+                    multiline={true}
+                    scrollEnabled={true}
+                    blurOnSubmit={false} // Keeps the box from jumping on 'Enter'
+                    value={aiTextQuery}
+                    onChangeText={setAiTextQuery}
+                    editable={!isAILoading}
+                    underlineColorAndroid="transparent" // Clean look for Android
+                  />
+                </View>
+
                 <View style={styles.editActions}>
                   <TouchableOpacity
                     style={[styles.modalBtn, styles.cancelBtn]}
@@ -1251,6 +1330,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                   >
                     <Text style={{ fontWeight: '700', color: '#666' }}>Cancel</Text>
                   </TouchableOpacity>
+
                   <TouchableOpacity
                     style={[styles.modalBtn, styles.saveBtn]}
                     onPress={handleAITextSearch}
@@ -1425,8 +1505,6 @@ const styles = StyleSheet.create({
   editOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
   editBox: { backgroundColor: '#FFF', width: '92%', padding: 25, borderRadius: 25, position: 'relative', elevation: 20, alignItems: 'center' },
   editTitle: { fontSize: 18, fontWeight: '900', marginBottom: 15, textAlign: 'center' },
-  inputGroup: { marginBottom: 15, width: '100%' },
-  inputLabel: { fontSize: 10, fontWeight: '800', color: '#999', marginBottom: 5, textTransform: 'uppercase' },
   editInputSmall: {
     backgroundColor: '#F5F5F5',
     padding: 10,
@@ -1502,5 +1580,71 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderLeftColor: '#DDD',
     paddingLeft: 8,
-  }
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  gridItem: {
+    width: '31%', // Fits 3 per row with spacing
+    backgroundColor: '#F5F5F5',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#EEE',
+  },
+  gridItemActive: {
+    backgroundColor: '#1B4D20',
+    borderColor: '#1B4D20',
+  },
+  gridLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1B4D20',
+    marginTop: 4,
+  },
+  gridLabelActive: {
+    color: '#FFF',
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#9E9E9E',
+    textTransform: 'uppercase',
+    marginBottom: 10,
+    letterSpacing: 0.5,
+  },
+  inputGroup: {
+    marginBottom: 15,
+    width: '100%',
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#444',
+    marginBottom: 5,
+  },
+  fixedInputWrapper: {
+    height: 120,
+    width: '100%',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    padding: 12,
+    marginBottom: 15,
+    overflow: 'hidden', // Forces content to stay inside
+  },
+  fixedInternalInput: {
+    flex: 1, // Fills the wrapper
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+    textAlignVertical: 'top', // Critical for Android
+    padding: 0, // Reset default padding since wrapper handles it
+  },
 });
