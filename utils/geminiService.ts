@@ -24,15 +24,7 @@ export const analyzeImageWithGemini = async (
 
     const data = await response.json();
 
-    if (data.identifiedOptions) {
-      data.identifiedOptions = data.identifiedOptions.map((opt: any) => ({
-        ...opt,
-        calories: opt.calories || 0,
-        protein: opt.protein || 0,
-        carbs: opt.carbs || 0,
-      }));
-    }
-
+    return JSON.stringify(data);
   } catch (error: any) {
     console.error("Frontend Service Error:", error);
 
