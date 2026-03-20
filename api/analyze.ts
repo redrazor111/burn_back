@@ -27,14 +27,17 @@ export default async function handler(req: any, res: any) {
     }
 
     const prompt = `
-    Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}
-    Provide 3 distinct possible interpretations/portion sizes.
-    Return ONLY this JSON:
-    {
-      "identifiedOptions": [
-        {"name": "String", "calories": number, "protein": number, "carbs": number}
-      ]
-    }`;
+  Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}
+  Provide 3 distinct possible interpretations/portion sizes.
+
+  IMPORTANT: Return ONLY valid JSON. All numeric values (calories, protein, carbs) MUST be numbers, NOT strings.
+
+  JSON Structure:
+  {
+    "identifiedOptions": [
+      {"name": "Food Name", "calories": 250, "protein": 20, "carbs": 30}
+    ]
+  }`;
 
     contentParts.unshift(prompt);
 
