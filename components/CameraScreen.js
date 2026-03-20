@@ -21,7 +21,6 @@ import { auth, db } from '@/utils/firebaseConfig';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
 // Local Utilities & Components
-import { saveToHistory } from '@/utils/historyStorage';
 import { checkQuota, incrementQuota } from '@/utils/quotaService';
 import Guide from '../components/Guide';
 import Shop from '../components/Shop';
@@ -91,7 +90,7 @@ export default function CameraScreen() {
       const rawResponse = await analyzeImageWithGemini(isPro, undefined, base64Data, undefined);
       const data = JSON.parse(rawResponse);
       await incrementQuota();
-      setPendingResult({ options: data.identifiedOptions, rawResult: data });
+      setPendingResult({ options: data.identifiedOptions.slice(0, 3), rawResult: data });
     } catch (e) {
       console.error("Scan Error:", e);
     } finally {
@@ -104,7 +103,7 @@ export default function CameraScreen() {
     if (!user) return;
 
     try {
-      const docRef = await addDoc(collection(db, 'users', user.uid, 'meals'), {
+      await addDoc(collection(db, 'users', user.uid, 'meals'), {
         productName: option.name,
         calories: option.calories.toString(),
         protein: parseInt(option.protein || 0),
@@ -112,14 +111,6 @@ export default function CameraScreen() {
         isManual: false,
         date: new Date().toISOString(),
         createdAt: serverTimestamp(),
-      });
-
-      await saveToHistory(option.name, {
-        id: docRef.id,
-        identifiedProduct: option.name,
-        calories: option.calories,
-        protein: option.protein || 0,
-        carbs: option.carbs || 0,
       });
 
       setPendingResult(null);

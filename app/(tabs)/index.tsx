@@ -36,7 +36,7 @@ import { createMaterialTopTabNavigator } from '@react-navigation/material-top-ta
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { removeFromHistory, saveToHistory } from '@/utils/historyStorage';
+import { removeFromHistory } from '@/utils/historyStorage';
 import ActivityHistory from '../../components/ActivityHistory';
 import CameraScreen from '../../components/CameraScreen';
 import Guide from '../../components/Guide';
@@ -57,7 +57,7 @@ type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 interface ScanResult {
   id: string;
   productName: string;
-  calories: string;
+  calories: number;
   carbs?: number;
   protein?: number;
   isManual: boolean;
@@ -88,20 +88,20 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const navigation = useNavigation<any>();
   const [userId, setUserId] = useState<string | null | undefined>(null);
 
-  const [targetCalories, setTargetCalories] = useState('0');
+  const [targetCalories, setTargetCalories] = useState(0);
   const [gender, setGender] = useState('Male');
-  const [age, setAge] = useState('0');
-  const [weight, setWeight] = useState('0');
+  const [age, setAge] = useState(0);
+  const [weight, setWeight] = useState(0);
   const [waterCups, setWaterCups] = useState(0);
   const [mealQuotaCount, setMealQuotaCount] = useState(0);
   const [geminiQuotaCount, setGeminiQuotaCount] = useState('OK');
   const [geminiCount, setGeminiCount] = useState(0);
   const [activityQuotaCount, setActivityQuotaCount] = useState(0);
 
-  const [tempCalories, setTempCalories] = useState('0');
+  const [tempCalories, setTempCalories] = useState('');
   const [tempGender, setTempGender] = useState('Male');
-  const [tempAge, setTempAge] = useState('0');
-  const [tempWeight, setTempWeight] = useState('0');
+  const [tempAge, setTempAge] = useState('');
+  const [tempWeight, setTempWeight] = useState('');
 
   const [isEditingTarget, setIsEditingTarget] = useState(false);
   const [isLoggingActivity, setIsLoggingActivity] = useState(false);
@@ -114,7 +114,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [isSaving, setIsSaving] = useState(false);
 
   const [selectedActivity, setSelectedActivity] = useState(ACTIVITY_TYPES[0]);
-  const [activityDuration, setActivityDuration] = useState('30');
+  const [activityDuration, setActivityDuration] = useState('');
   const [manualFoodName, setManualFoodName] = useState('');
   const [manualFoodCals, setManualFoodCals] = useState('');
   const [manualFoodProtein, setManualFoodProtein] = useState('');
@@ -254,21 +254,21 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
         if (docSnap.exists()) {
           const data = docSnap.data();
-          setTargetCalories(data.targetCalories || '0');
+          setTargetCalories(data.targetCalories || 0);
           setGender(data.gender || 'Male');
-          setAge(data.age || '0');
-          setWeight(data.weight || '0');
-          setTempCalories(data.targetCalories || '2000');
+          setAge(Number(data.age) || 0);
+          setWeight(Number(data.weight) || 0);
+          setTempCalories((data.targetCalories || '').toString());
           setTempGender(data.gender || 'Male');
-          setTempAge(data.age || '25');
-          setTempWeight(data.weight || '70');
+          setTempAge((data.age || '').toString());
+          setTempWeight((data.weight || '').toString());
 
           // Persist Sync Status
           const isAutoSync = data.autoSyncEnabled || false;
           setAutoSyncEnabled(isAutoSync);
           setLastSyncedTime(data.lastSyncedTime || 'Never');
 
-          if (data.isNewUser !== false || data.targetCalories === '0') {
+          if (data.isNewUser !== false || data.targetCalories === 0) {
             setIsEditingTarget(true);
           }
 
@@ -280,7 +280,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             handleHealthSync();
           }
         } else {
-          await setDoc(userRef, { lastSavedDate: today, waterCups: 0, geminiCount: 0, mealsCount: 0, activitiesCount: 0, targetCalories: '0', gender: 'Male', age: '0', weight: '0', isNewUser: true, autoSyncEnabled: false }, { merge: true });
+          await setDoc(userRef, { lastSavedDate: today, waterCups: 0, geminiCount: 0, mealsCount: 0, activitiesCount: 0, targetCalories: 0, gender: 'Male', age: 0, weight: 0, isNewUser: true, autoSyncEnabled: false }, { merge: true });
           setIsEditingTarget(true);
         }
       }
@@ -300,10 +300,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     const unsubscribeProfile = onSnapshot(doc(db, 'users', userId, 'profile', 'data'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setTargetCalories(data.targetCalories || '2000');
+        setTargetCalories(Number(data.targetCalories) || 0);
         setGender(data.gender || 'Male');
-        setAge(data.age || '25');
-        setWeight(data.weight || '70');
+        setAge(Number(data.age) || 0);
+        setWeight(Number(data.weight) || 0);
         setWaterCups(data.waterCups || 0);
         setAutoSyncEnabled(data.autoSyncEnabled || false);
       }
@@ -320,7 +320,16 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     );
 
     const unsubscribeMeals = onSnapshot(mealsQuery, (snapshot) => {
-      const loadedScans = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as ScanResult[];
+      const loadedScans = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          calories: Number(data.calories),
+          protein: Number(data.protein || 0),
+          carbs: Number(data.carbs || 0)
+        };
+      }) as ScanResult[];
       setScans(loadedScans);
     }, (error) => console.error("Meals Listener Error:", error));
 
@@ -388,55 +397,52 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   const saveProfileData = async () => {
-    const cals = Number(tempCalories);
-    const age = Number(tempAge);
-    const weight = Number(tempWeight);
+    // 1. Convert inputs to numbers
+    const cals = Math.floor(Number(tempCalories));
+    const ageNum = Math.floor(Number(tempAge));
+    const weightNum = Math.floor(Number(tempWeight));
 
-    // 1. Calorie Validation (Range: 500 - 10,000)
-    if (!Number.isInteger(cals) || cals < 500 || cals > 10000) {
-      Alert.alert(
-        "Invalid Calories",
-        "Please enter a whole number between 500 and 10,000."
-      );
+    // 2. Calorie Validation (500 - 10,000)
+    if (isNaN(cals) || cals < 500 || cals > 10000) {
+      Alert.alert("Invalid Calories", "Please enter a goal between 500 and 10,000.");
       return;
     }
 
-    // 2. Age Validation (Range: 13 - 120)
-    if (!Number.isInteger(age) || age < 13 || age > 120) {
-      Alert.alert(
-        "Invalid Age",
-        "Please enter a valid age between 13 and 120."
-      );
+    // 3. Age Validation (13 - 120) - FIXED: Now checks ageNum
+    if (isNaN(ageNum) || ageNum < 13 || ageNum > 120) {
+      Alert.alert("Invalid Age", "Please enter a valid age between 13 and 120.");
       return;
     }
 
-    // 3. Weight Validation (Range: 30kg - 500kg)
-    if (!Number.isInteger(weight) || weight < 30 || weight > 500) {
-      Alert.alert(
-        "Invalid Weight",
-        "Please enter a weight between 30kg and 500kg."
-      );
+    // 4. Weight Validation (30 - 500) - FIXED: Now checks weightNum
+    if (isNaN(weightNum) || weightNum < 30 || weightNum > 500) {
+      Alert.alert("Invalid Weight", "Please enter a weight between 30kg and 500kg.");
       return;
     }
 
+    // 5. Database Save (Only reaches here if all values are valid)
     try {
       if (userId) {
+        setIsSaving(true); // Assuming you have a loading state
+
         await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
-          targetCalories: Math.floor(cals).toString(),
+          targetCalories: cals,
           gender: tempGender,
-          age: Math.floor(age).toString(),
-          weight: Math.floor(weight).toString(),
+          age: ageNum,
+          weight: weightNum,
           isNewUser: false,
           updatedAt: serverTimestamp()
         }, { merge: true });
 
         await refreshQuotas();
+        setIsEditingTarget(false);
+        Keyboard.dismiss();
       }
-
-      setIsEditingTarget(false);
-      Keyboard.dismiss();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
-      Alert.alert("Error", "Failed to save profile. Please check your connection.");
+      Alert.alert("Error", "Failed to save profile.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -451,7 +457,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const handleEditMeal = (item: ScanResult) => {
     setEditingMealId(item.id);
     setEditName(item.productName);
-    setEditCals(item.calories);
+    setEditCals(item.calories.toString());
     setEditProtein((item.protein || 0).toString());
     setEditCarbs((item.carbs || 0).toString());
     setIsEditingSelection(true); // Re-use the existing modal logic
@@ -488,7 +494,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           return;
         }
       }
-      const burnPerMin = (selectedActivity.met * parseFloat(weight) * 3.5) / 200;
+      const burnPerMin = (selectedActivity.met * weight * 3.5) / 200;
       const totalBurned = Math.round(burnPerMin * mins);
 
       const activityData = {
@@ -519,6 +525,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       setEditingActivityId(null);
       setActivityDuration("");
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
       Alert.alert("Error", "Could not save activity. Please try again.");
     } finally {
@@ -589,9 +596,9 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     const carbs = parseInt(manualFoodCarbs) || 0;
 
     try {
-      const docRef = await addDoc(collection(db, 'users', userId, 'meals'), {
+      await addDoc(collection(db, 'users', userId, 'meals'), {
         productName: manualFoodName,
-        calories: cals.toString(),
+        calories: cals,
         protein: protein,
         carbs: carbs,
         isManual: true,
@@ -600,14 +607,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       });
       await incrementMealsQuota();
       await refreshQuotas();
-      await saveToHistory(manualFoodName, {
-        id: docRef.id,
-        identifiedProduct: manualFoodName,
-        calories: cals,
-        protein: protein,
-        carbs: carbs,
-        isManual: true
-      });
       setIsLoggingFood(false);
       setManualFoodName('');
       setManualFoodCals('');
@@ -671,28 +670,20 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         const mealRef = doc(db, 'users', userId, 'meals', editingMealId);
         await setDoc(mealRef, {
           productName: option.name,
-          calories: option.calories.toString(),
+          calories: option.calories,
           protein: option.protein,
           carbs: option.carbs,
           updatedAt: serverTimestamp(),
         }, { merge: true });
       } else {
-        const docRef = await addDoc(collection(db, 'users', userId, 'meals'), {
+        await addDoc(collection(db, 'users', userId, 'meals'), {
           productName: option.name,
-          calories: option.calories.toString(),
+          calories: option.calories,
           protein: option.protein,
           carbs: option.carbs,
           isManual: false,
           date: new Date().toISOString(),
           createdAt: serverTimestamp(),
-        });
-        await saveToHistory(option.name, {
-          id: docRef.id,
-          identifiedProduct: option.name,
-          calories: option.calories,
-          protein: option.protein,
-          carbs: option.carbs,
-          isManual: false
         });
       }
 
@@ -702,16 +693,20 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     } catch (e) { console.error(e); }
   };
 
-  const startEditingOption = (opt: { name: string; calories: number }) => {
-    setEditName(opt.name); setEditCals(opt.calories.toString()); setIsEditingSelection(true);
+  const startEditingOption = (opt: { name: string; calories: number; protein: number; carbs: number }) => {
+    setEditName(opt.name);
+    setEditCals(opt.calories.toString());
+    setEditProtein(opt.protein.toString());
+    setEditCarbs(opt.carbs.toString());
+    setIsEditingSelection(true);
   };
 
-  const totalConsumed = (scans || []).reduce((sum, s) => sum + Number(s.calories), 0);
-  const totalProteinGrams = (scans || []).reduce((sum, s) => sum + Number(s.protein || 0), 0);
-  const totalCarbsGrams = (scans || []).reduce((sum, s) => sum + Number(s.carbs || 0), 0);
+  const totalConsumed = (scans || []).reduce((sum, s) => sum + (s.calories || 0), 0);
+  const totalProteinGrams = (scans || []).reduce((sum, s) => sum + (s.protein || 0), 0);
+  const totalCarbsGrams = (scans || []).reduce((sum, s) => sum + (s.carbs || 0), 0);
 
-  const totalBurned = (activities || []).reduce((sum, a) => sum + a.caloriesBurned, 0);
-  const remainingCalories = Math.max(Number(targetCalories) - totalConsumed + totalBurned, 0);
+  const totalBurned = (activities || []).reduce((sum, a) => sum + (a.caloriesBurned || 0), 0);
+  const remainingCalories = Math.max(targetCalories - totalConsumed + totalBurned, 0);
 
   if (isProfileLoading) {
     return (
@@ -1078,7 +1073,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 value={manualFoodCals}
                 onChangeText={setManualFoodCals}
                 keyboardType="numeric"
-                placeholder="0"
               />
             </View>
 
@@ -1090,7 +1084,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                   value={manualFoodProtein}
                   onChangeText={setManualFoodProtein}
                   keyboardType="numeric"
-                  placeholder="0"
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1 }]}>
@@ -1100,7 +1093,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                   value={manualFoodCarbs}
                   onChangeText={setManualFoodCarbs}
                   keyboardType="numeric"
-                  placeholder="0"
                 />
               </View>
             </View>
@@ -1153,7 +1145,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 value={activityDuration}
                 onChangeText={setActivityDuration}
                 keyboardType="numeric"
-                placeholder="30"
               />
             </View>
 
@@ -1179,7 +1170,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>
             <Text style={styles.editTitle}>
-              {targetCalories === '0' ? "Welcome! Setup Profile" : "Edit Profile"}
+              {targetCalories === 0 ? "Welcome! Setup Profile" : "Edit Profile"}
             </Text>
 
             <View style={styles.inputGroup}>
@@ -1194,7 +1185,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 value={tempCalories}
                 onChangeText={setTempCalories}
                 keyboardType="numeric"
-                placeholder="0"
               />
             </View>
 
@@ -1220,7 +1210,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                   value={tempAge}
                   onChangeText={setTempAge}
                   keyboardType="numeric"
-                  placeholder="0"
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1.2 }]}>
@@ -1230,22 +1219,21 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                   value={tempWeight}
                   onChangeText={setTempWeight}
                   keyboardType="numeric"
-                  placeholder="0"
                 />
               </View>
             </View>
 
             <View style={styles.editActions}>
-              {targetCalories !== '0' && (
+              {targetCalories !== 0 && (
                 <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsEditingTarget(false)}>
                   <Text>Cancel</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity
-                style={[styles.modalBtn, styles.saveBtn, { flex: targetCalories === '0' ? 1 : 0.48 }]}
+                style={[styles.modalBtn, styles.saveBtn, { flex: targetCalories === 0 ? 1 : 0.48 }]}
                 onPress={saveProfileData}
               >
-                <Text style={{ color: '#fff' }}>{targetCalories === '0' ? "Get Started" : "Save"}</Text>
+                <Text style={{ color: '#fff' }}>{targetCalories === 0 ? "Get Started" : "Save"}</Text>
               </TouchableOpacity>
             </View>
           </View>
