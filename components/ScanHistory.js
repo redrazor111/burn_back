@@ -285,7 +285,7 @@ export default function ScanHistory() {
           <Text style={styles.title}>Intake History</Text>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={handleOpenChart} style={styles.actionBtn}>
-              <MaterialCommunityIcons name="finance" size={28} color="#1B4D20" />
+              <MaterialCommunityIcons name="finance" size={28} color="#B8860B" />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
               <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />
@@ -391,68 +391,44 @@ export default function ScanHistory() {
 
           <View style={{ flex: 1 }}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
-              {/* We check stats instead of chartData */}
               {stats ? (
                 <>
                   <View style={styles.averagesContainer}>
                     <View style={{ flex: 1 }}>
-                      {/* ROW 1: Calories */}
                       <View style={{ flexDirection: 'row', marginBottom: 10 }}>
                         <View style={styles.avgBoxSmall}>
-                          <Text style={styles.avgLabelCenter}>AVG DAILY AVG</Text>
-                          <Text style={styles.avgValueCenter}>{stats.dailyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                          <Text style={styles.avgLabelCenter}>AVG DAILY CAL</Text>
+                          <Text style={styles.avgValueCenter}>
+                            {stats.dailyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text>
+                          </Text>
                         </View>
                         <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
-                          <Text style={styles.avgLabelCenter}>PROJECTED</Text>
-                          <Text style={styles.avgValueCenter}>{stats.monthlyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                          <Text style={styles.avgLabelCenter}>CALORIE GOAL</Text>
+                          <Text style={styles.avgValueCenter}>
+                            {targetCalories.toLocaleString()} <Text style={styles.avgUnit}>cal</Text>
+                          </Text>
                         </View>
                       </View>
 
-                      {/* ROW 2: Macros */}
                       <View style={{ flexDirection: 'row', marginBottom: 10 }}>
-                        <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9', alignItems: 'flex-start', paddingHorizontal: 12 }]}>
-                          <Text style={styles.avgLabelCenter}>AVG DAILY PROTEIN</Text>
+                        <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9' }]}>
+                          <Text style={styles.avgLabelCenter}>AVG PROTEIN</Text>
                           <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
                             <Text style={styles.avgValueCenter}>{stats.avgProtein}<Text style={styles.avgUnit}>g</Text></Text>
                             <View style={{
                               marginLeft: 6,
                               backgroundColor: stats.proteinGoalMet >= 100 ? '#2E7D32' : '#81C784',
-                              paddingHorizontal: 5,
-                              borderRadius: 5
+                              paddingHorizontal: 4,
+                              borderRadius: 4
                             }}>
-                              <Text style={{ fontSize: 9, color: '#FFF', fontWeight: '900' }}>{stats.proteinGoalMet}%</Text>
+                              <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>{stats.proteinGoalMet}%</Text>
                             </View>
                           </View>
-                          <Text style={{ fontSize: 8, color: '#666', marginTop: 2 }}>Goal: {stats.dailyProteinGoal}g</Text>
                         </View>
 
-                        <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9', alignItems: 'flex-start', paddingHorizontal: 12 }]}>
-                          <Text style={styles.avgLabelCenter}>AVG DAILY CARBS</Text>
+                        <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9' }]}>
+                          <Text style={styles.avgLabelCenter}>AVG CARBS</Text>
                           <Text style={styles.avgValueCenter}>{stats.avgCarbs}<Text style={styles.avgUnit}>g</Text></Text>
-                          <Text style={{ fontSize: 8, color: '#666', marginTop: 2 }}>Daily Average</Text>
-                        </View>
-                      </View>
-
-                      {/* ROW 3: Forecast */}
-                      <View style={[styles.avgBoxSmall, {
-                        backgroundColor: Number(stats.weightProjectionLbs) > 0 ? '#FFEBEE' : '#E8F5E9',
-                        flexDirection: 'row',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        paddingHorizontal: 15,
-                        marginTop: 5
-                      }]}>
-                        <Text style={[styles.avgLabelCenter, { marginBottom: 0 }]}>30-DAY FORECAST</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                          <Text style={[styles.avgValueCenter, { color: Number(stats.weightProjectionLbs) > 0 ? '#D32F2F' : '#2E7D32' }]}>
-                            {Number(stats.weightProjectionKg) > 0 ? `+${stats.weightProjectionKg}` : stats.weightProjectionKg}
-                            <Text style={styles.avgUnit}> kg</Text>
-                          </Text>
-                          <View style={{ width: 1, height: 12, backgroundColor: 'rgba(0,0,0,0.1)', marginHorizontal: 8 }} />
-                          <Text style={[styles.avgValueCenter, { color: Number(stats.weightProjectionLbs) > 0 ? '#D32F2F' : '#2E7D32', fontSize: 14, opacity: 0.8 }]}>
-                            {Number(stats.weightProjectionLbs) > 0 ? `+${stats.weightProjectionLbs}` : stats.weightProjectionLbs}
-                            <Text style={styles.avgUnit}> lbs</Text>
-                          </Text>
                         </View>
                       </View>
                     </View>

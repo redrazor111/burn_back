@@ -184,7 +184,7 @@ export default function ActivityHistory() {
           <Text style={styles.title}>Burned History</Text>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={handleOpenChart} style={styles.actionBtn}>
-              <MaterialCommunityIcons name="finance" size={28} color="#1B4D20" />
+              <MaterialCommunityIcons name="finance" size={28} color="#B8860B" />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
               <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />

@@ -438,7 +438,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         setIsEditingTarget(false);
         Keyboard.dismiss();
       }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
       Alert.alert("Error", "Failed to save profile.");
     } finally {
@@ -735,7 +735,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               <MaterialCommunityIcons
                 name="google-fit"
                 size={28}
-                color={autoSyncEnabled ? "#2196F3" : "#1B4D20"}
+                color={autoSyncEnabled ? "#FFD700" : "#B8860B"}
               />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
@@ -879,11 +879,17 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           </View>
 
           {lastSyncTime && (
-            <View style={styles.syncRow}>
-              <View style={styles.syncIndicator} />
-              <Text style={styles.syncText}>Synced with Health at {lastSyncTime}</Text>
+            <View style={[styles.syncRow, styles.premiumSyncRow]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <MaterialCommunityIcons name="star" size={16} color="#DAA520" style={{ marginRight: 6 }} />
+                <View style={[styles.syncIndicator, styles.premiumSyncIndicator]} />
+                <Text style={[styles.syncText, styles.premiumSyncText]}>
+                  Synced with Health at {lastSyncTime}
+                </Text>
+              </View>
+
               <TouchableOpacity onPress={handleHealthSync} style={styles.refreshIcon}>
-                <Text style={{ fontSize: 12, color: '#1B4D20', fontWeight: '600' }}>Refresh</Text>
+                <Text style={{ fontSize: 14, color: '#B8860B', fontWeight: '800' }}>Refresh</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1542,36 +1548,6 @@ const styles = StyleSheet.create({
   optionCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F5F5F5', padding: 16, borderRadius: 15, marginBottom: 10, borderWidth: 1, borderColor: '#E0E0E0' },
   optionName: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
   optionCal: { fontSize: 14, color: '#2E7D32', fontWeight: '700', marginTop: 2 },
-  syncRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-    marginBottom: 5,
-    backgroundColor: '#F0F7F0',
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    alignSelf: 'center',
-  },
-  syncIndicator: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#4CAF50', // Green dot
-    marginRight: 6,
-  },
-  syncText: {
-    fontSize: 11,
-    color: '#666',
-    fontWeight: '500',
-  },
-  refreshIcon: {
-    marginLeft: 8,
-    borderLeftWidth: 1,
-    borderLeftColor: '#DDD',
-    paddingLeft: 8,
-  },
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1637,5 +1613,57 @@ const styles = StyleSheet.create({
     color: '#333',
     textAlignVertical: 'top', // Critical for Android
     padding: 0, // Reset default padding since wrapper handles it
+  },
+syncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    marginBottom: 5,
+    backgroundColor: '#F0F7F0',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    alignSelf: 'center',
+  },
+  premiumSyncRow: {
+    backgroundColor: '#FFF8E1', // Light Gold Background
+    borderColor: '#FFD700',      // Solid Gold Border
+    borderWidth: 1,
+    paddingVertical: 8,         // Making it bigger
+    paddingHorizontal: 16,
+    borderRadius: 25,
+    justifyContent: 'space-between', // Push text and refresh apart
+    width: '90%',               // Expanding width
+  },
+  syncIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#4CAF50', // Original Green dot
+    marginRight: 6,
+  },
+  premiumSyncIndicator: {
+    width: 10,                  // Making the dot bigger
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FFD700', // Gold Dot
+    marginRight: 8,
+  },
+  syncText: {
+    fontSize: 11,               // Original size
+    color: '#666',              // Original color
+    fontWeight: '500',
+  },
+  premiumSyncText: {
+    fontSize: 13,               // Making it bigger
+    color: '#B8860B',           // Dark Goldenrod
+    fontWeight: '700',          // Bolder
+  },
+  refreshIcon: {
+    marginLeft: 8,
+    borderLeftWidth: 1,
+    borderLeftColor: '#DDD',
+    paddingLeft: 8,
   },
 });
