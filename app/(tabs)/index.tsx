@@ -824,7 +824,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               <MaterialCommunityIcons
                 name={(!isPro && geminiCount >= MAX_SEARCHES) ? "lock" : "camera"}
                 size={22}
-                color={(!isPro && geminiCount >= MAX_SEARCHES) ? "#9E9E9E" : "#1B4D20"}
+                color="#B8860B"
               />
               <Text style={styles.tripleBtnText}>
                 {(!isPro && geminiCount >= MAX_SEARCHES)
@@ -854,7 +854,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               <MaterialCommunityIcons
                 name={(!isPro && geminiCount >= MAX_SEARCHES) ? "lock" : "text-search"}
                 size={22}
-                color={(!isPro && geminiCount >= MAX_SEARCHES) ? "#9E9E9E" : "#1B4D20"}
+                color="#B8860B"
               />
               <Text style={styles.tripleBtnText}>
                 {(!isPro && geminiCount >= MAX_SEARCHES)
@@ -881,10 +881,15 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           {lastSyncTime && (
             <View style={[styles.syncRow, styles.premiumSyncRow]}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <MaterialCommunityIcons name="star" size={16} color="#DAA520" style={{ marginRight: 6 }} />
+                <MaterialCommunityIcons
+                  name={autoSyncEnabled ? "sync" : "sync-off"}
+                  size={16}
+                  color="#DAA520"
+                  style={{ marginRight: 6 }}
+                />
                 <View style={[styles.syncIndicator, styles.premiumSyncIndicator]} />
                 <Text style={[styles.syncText, styles.premiumSyncText]}>
-                  Synced with Health at {lastSyncTime}
+                  {autoSyncEnabled ? 'Auto-Synced' : 'Last Sync'} at {lastSyncTime}
                 </Text>
               </View>
 
@@ -1614,7 +1619,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top', // Critical for Android
     padding: 0, // Reset default padding since wrapper handles it
   },
-syncRow: {
+  syncRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
