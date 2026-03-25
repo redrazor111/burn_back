@@ -40,13 +40,15 @@ import { removeFromHistory } from '@/utils/historyStorage';
 import ActivityHistory from '../../components/ActivityHistory';
 import CameraScreen from '../../components/CameraScreen';
 import Guide from '../../components/Guide';
+import HistorySummary from '../../components/HistorySummary';
 import PremiumModal from '../../components/PremiumModal';
 import ScanHistory from '../../components/ScanHistory';
 import Shop from '../../components/Shop';
+
 import { useSubscriptionStatus } from '../../utils/subscription';
 
 import { db, silentSignIn } from '@/utils/firebaseConfig';
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 
 import { MAX_ACTIVITIES, MAX_MEALS, MAX_SEARCHES } from '../../utils/constants';
 
@@ -112,6 +114,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [aiTextQuery, setAiTextQuery] = useState('');
   const [isAILoading, setIsAILoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [manualActivityCals, setManualActivityCals] = useState('');
 
   const [selectedActivity, setSelectedActivity] = useState(ACTIVITY_TYPES[0]);
   const [activityDuration, setActivityDuration] = useState('');
@@ -156,15 +159,12 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         { accessType: 'read', recordType: 'TotalCaloriesBurned' }
       ]);
 
-      const totalCaloriesBurned = granted.some(
+      const totalCaloriesBurnedPermission = granted.some(
         (p: any) => p.recordType === 'TotalCaloriesBurned'
       );
 
-      if (!totalCaloriesBurned) {
-        Alert.alert(
-          "Permission Required",
-          "Please enable 'Total Calories Burned' in the Health Connect menu."
-        );
+      if (!totalCaloriesBurnedPermission) {
+        Alert.alert("Permission Required", "Please enable 'Total Calories Burned' in Health Connect.");
         setIsSyncing(false);
         return;
       }
@@ -173,6 +173,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       startOfDay.setHours(0, 0, 0, 0);
       const now = new Date();
 
+      // 1. Get the absolute total from Health Connect
       const aggregation = await aggregateRecord({
         recordType: 'TotalCaloriesBurned',
         timeRangeFilter: {
@@ -182,47 +183,41 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         },
       });
 
-      let totalBurned = 0;
+      let healthTotal = 0;
       if (aggregation?.ENERGY_TOTAL) {
-        totalBurned = Math.round(
-          aggregation.ENERGY_TOTAL.inKilocalories
-        );
+        healthTotal = Math.round(aggregation.ENERGY_TOTAL.inKilocalories);
       }
 
-      if (totalBurned > 0 && userId) {
-        const syncQ = query(
-          collection(db, 'users', userId, 'activities'),
-          where('type', '==', 'Health Sync'),
-          where('date', '>=', startOfDay.toISOString())
-        );
+      if (healthTotal > 0 && userId) {
+        // 2. Calculate how many "Health Sync" calories we've ALREADY logged today
+        const existingSyncCalories = activities
+          .filter(act => act.type === "Health Sync")
+          .reduce((sum, act) => sum + (act.caloriesBurned || 0), 0);
 
-        const snap = await getDocs(syncQ);
-        const delPromises = snap.docs.map(d => deleteDoc(d.ref));
-        await Promise.all(delPromises);
+        // 3. Only log the DIFFERENCE
+        const incrementalCalories = healthTotal - existingSyncCalories;
 
-        // 4. Save to Firestore
-        await addDoc(collection(db, 'users', userId, 'activities'), {
-          type: "Health Sync",
-          icon: "google-fit",
-          duration: 0,
-          caloriesBurned: totalBurned,
-          date: new Date().toISOString(),
-          createdAt: serverTimestamp(),
-        });
+        if (incrementalCalories > 0) {
+          await addDoc(collection(db, 'users', userId, 'activities'), {
+            type: "Health Sync",
+            icon: "google-fit",
+            duration: 0,
+            caloriesBurned: incrementalCalories,
+            date: new Date().toISOString(),
+            createdAt: serverTimestamp(),
+          });
+        }
 
         const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         setLastSyncedTime(timestamp);
         setLastSyncTime(timestamp);
 
-        if (userId) {
-          await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
-            lastSyncedTime: timestamp
-          }, { merge: true });
-        }
+        await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
+          lastSyncedTime: timestamp
+        }, { merge: true });
       }
     } catch (err: any) {
-      const errorMessage = typeof err === 'string' ? err : (err.message || "Unknown Error");
-      Alert.alert("Sync Error", errorMessage);
+      Alert.alert("Sync Error", err.message || "Unknown Error");
     } finally {
       setIsSyncing(false);
       refreshQuotas();
@@ -352,6 +347,17 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   }, [userId]);
 
   useEffect(() => {
+    const mins = Number(activityDuration);
+    if (!isNaN(mins) && mins > 0) {
+      const burnPerMin = (selectedActivity.met * weight * 3.5) / 200;
+      const calculatedBurn = Math.round(burnPerMin * mins);
+      setManualActivityCals(calculatedBurn.toString());
+    } else {
+      setManualActivityCals('');
+    }
+  }, [activityDuration, selectedActivity, weight]);
+
+  useEffect(() => {
     const disableSyncIfNonPro = async () => {
       if (!isPro && autoSyncEnabled && userId) {
         setAutoSyncEnabled(false);
@@ -475,42 +481,26 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     if (!userId || isSaving) return;
 
     const mins = Number(activityDuration);
-    if (!Number.isInteger(mins) || mins <= 0 || mins > 1440) {
-      Alert.alert(
-        "Invalid Duration",
-        "Please enter a whole number of minutes (1 to 1440)."
-      );
+    const finalCalories = Number(manualActivityCals);
+
+    if (isNaN(mins) || mins <= 0) {
+      Alert.alert("Invalid Duration", "Please enter minutes (1 to 1440).");
       return;
     }
 
     setIsSaving(true);
 
     try {
-      if (!editingActivityId) {
-        const currentActCount = await checkActivitesQuota();
-        if (!isPro && currentActCount >= MAX_ACTIVITIES) {
-          setIsLoggingActivity(false);
-          setShowPremium(true);
-          return;
-        }
-      }
-      const burnPerMin = (selectedActivity.met * weight * 3.5) / 200;
-      const totalBurned = Math.round(burnPerMin * mins);
-
       const activityData = {
         type: selectedActivity.label,
         icon: selectedActivity.icon,
         duration: mins,
-        caloriesBurned: totalBurned,
+        caloriesBurned: finalCalories || 0, // Fallback to 0 if empty
         updatedAt: serverTimestamp(),
       };
 
       if (editingActivityId) {
-        await setDoc(
-          doc(db, 'users', userId, 'activities', editingActivityId),
-          activityData,
-          { merge: true }
-        );
+        await setDoc(doc(db, 'users', userId, 'activities', editingActivityId), activityData, { merge: true });
       } else {
         await addDoc(collection(db, 'users', userId, 'activities'), {
           ...activityData,
@@ -524,10 +514,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       setIsLoggingActivity(false);
       setEditingActivityId(null);
       setActivityDuration("");
-
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      setManualActivityCals("");
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
-      Alert.alert("Error", "Could not save activity. Please try again.");
+      Alert.alert("Error", "Could not save activity.");
     } finally {
       setIsSaving(false);
     }
@@ -941,7 +931,41 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           {/* Activities Section */}
           <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Today's Activities</Text></View>
 
-          {activities?.map((act) => (
+          {/* 1. Grouped Health Sync Card */}
+          {(() => {
+            const syncActivities = activities?.filter(a => a.type === "Health Sync") || [];
+            const totalSyncCalories = syncActivities.reduce((sum, a) => sum + (a.caloriesBurned || 0), 0);
+
+            if (totalSyncCalories > 0) {
+              return (
+                <View style={[styles.collapsibleCard, { borderColor: '#FFD700', backgroundColor: '#FFFDF0' }]}>
+                  <View style={styles.cardHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      <View style={[styles.iconPlaceholder, { backgroundColor: '#FFF9C4' }]}>
+                        <MaterialCommunityIcons name="google-fit" size={24} color="#B8860B" />
+                      </View>
+                      <View style={styles.headerInfo}>
+                        <Text style={[styles.foodTitle, { color: '#B8860B' }]}>Health Connect Sync</Text>
+                        <Text style={styles.foodCals}>
+                          Total {totalSyncCalories} cal Burned Today
+                        </Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      onPress={handleHealthSync}
+                      style={[styles.rowActionBtn, { backgroundColor: '#FFFDE7' }]}
+                    >
+                      <MaterialCommunityIcons name="refresh" size={18} color="#B8860B" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            }
+            return null;
+          })()}
+
+          {/* 2. Regular Manual Activities */}
+          {activities?.filter(act => act.type !== "Health Sync").map((act) => (
             <View key={act.id} style={styles.collapsibleCard}>
               <View style={styles.cardHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
@@ -956,14 +980,13 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                   </View>
                 </View>
 
-                {act.type !== "Health Sync" && (
-                  <TouchableOpacity
-                    onPress={() => handleEditActivity(act)}
-                    style={styles.rowActionBtn}
-                  >
-                    <MaterialCommunityIcons name="pencil" size={18} color="#1B4D20" />
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity
+                  onPress={() => handleEditActivity(act)}
+                  style={styles.rowActionBtn}
+                >
+                  <MaterialCommunityIcons name="pencil" size={18} color="#1B4D20" />
+                </TouchableOpacity>
+
                 <TouchableOpacity
                   onPress={() => deleteActivity(act.id)}
                   style={[styles.rowActionBtn, { backgroundColor: '#FFEBEE' }]}
@@ -1122,10 +1145,11 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       {isLoggingActivity && (
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>
-            <Text style={styles.editTitle}>Log Exercise/Activity</Text>
+            <Text style={styles.editTitle}>{editingActivityId ? "Edit Activity" : "Log Exercise/Activity"}</Text>
+
             <Text style={styles.sectionLabel}>Common Activities</Text>
             <View style={styles.gridContainer}>
-              {ACTIVITY_TYPES.map((act) => ( // Show top 6 as quick-select
+              {ACTIVITY_TYPES.map((act) => (
                 <TouchableOpacity
                   key={act.label}
                   style={[
@@ -1149,20 +1173,37 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               ))}
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Duration (Minutes)</Text>
-              <TextInput
-                style={styles.editInputSmall}
-                value={activityDuration}
-                onChangeText={setActivityDuration}
-                keyboardType="numeric"
-              />
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.inputLabel}>Duration (Mins)</Text>
+                <TextInput
+                  style={styles.editInputSmall}
+                  value={activityDuration}
+                  onChangeText={setActivityDuration}
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                {/* Updated Label with Override text */}
+                <Text style={styles.inputLabel}>Calories (Override)</Text>
+                <TextInput
+                  style={styles.editInputSmall}
+                  value={manualActivityCals}
+                  onChangeText={setManualActivityCals}
+                  keyboardType="numeric"
+                />
+              </View>
             </View>
 
             <View style={styles.editActions}>
               <TouchableOpacity
                 style={[styles.modalBtn, styles.cancelBtn]}
-                onPress={() => setIsLoggingActivity(false)}
+                onPress={() => {
+                  setIsLoggingActivity(false);
+                  setEditingActivityId(null);
+                  setActivityDuration("");
+                  setManualActivityCals("");
+                }}
               >
                 <Text style={{ fontWeight: '600', color: '#666' }}>Cancel</Text>
               </TouchableOpacity>
@@ -1170,7 +1211,9 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 style={[styles.modalBtn, styles.saveBtn]}
                 onPress={handleAddActivity}
               >
-                <Text style={{ color: '#fff', fontWeight: '800' }}>Add Activity</Text>
+                <Text style={{ color: '#fff', fontWeight: '800' }}>
+                  {editingActivityId ? "Update" : "Add Activity"}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1420,12 +1463,13 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 // Tab Navigator and Styles remain unchanged
 function AppContent() {
   const insets = useSafeAreaInsets();
-  const iconMap: Record<string, any> = { Today: 'calendar-outline', "AI Scan": 'camera-outline', "Intake": 'fast-food-outline', "Burned": 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
+  const iconMap: Record<string, any> = { Today: 'calendar-outline', Balance: 'scale-outline', "AI Scan": 'camera-outline', "Intake": 'fast-food-outline', "Burned": 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       <Tab.Navigator tabBarPosition="bottom" screenOptions={({ route }) => ({ tabBarActiveTintColor: '#1B4D20', tabBarInactiveTintColor: '#9E9E9E', tabBarLabelStyle: { fontSize: 10, fontWeight: '700', textTransform: 'none' }, tabBarStyle: { height: 75 + insets.bottom, paddingBottom: insets.bottom }, tabBarIcon: ({ color, focused }) => { const baseIconName = iconMap[route.name] || 'help-circle-outline'; const finalIconName = focused ? baseIconName.replace('-outline', '') : baseIconName; return <Ionicons name={finalIconName as any} size={24} color={color} />; }, })}>
         <Tab.Screen name="Today">{() => <SummaryScreen />}</Tab.Screen>
         <Tab.Screen name="AI Scan">{() => <CameraScreen />}</Tab.Screen>
+        <Tab.Screen name="Balance">{() => <HistorySummary />}</Tab.Screen>
         <Tab.Screen name="Intake">{() => <ScanHistory />}</Tab.Screen>
         <Tab.Screen name="Burned">{() => <ActivityHistory />}</Tab.Screen>
       </Tab.Navigator>
