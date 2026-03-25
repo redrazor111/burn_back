@@ -4,8 +4,9 @@ import {
   ActivityIndicator, // Added for Health Check
   Alert,
   Keyboard,
-  Modal, // Added for Health Check
+  Modal,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -515,7 +516,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       setEditingActivityId(null);
       setActivityDuration("");
       setManualActivityCals("");
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
       Alert.alert("Error", "Could not save activity.");
     } finally {
@@ -744,6 +745,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollPadding}>
 
           <TouchableOpacity style={styles.mainTargetBadge} activeOpacity={0.9} onPress={() => setIsEditingTarget(true)}>
+            <View style={styles.badgeEditIcon}>
+              <MaterialCommunityIcons name="pencil-circle" size={18} color="#1B4D20" />
+            </View>
+
             <View style={styles.targetSplitRow}>
               <View style={styles.targetColumn}><Text style={styles.targetLabel}>Goal</Text><Text style={styles.targetValue}>{targetCalories}<Text style={styles.unitSmall}> CAL</Text></Text></View>
               <View style={styles.verticalDivider} /><View style={styles.targetColumn}><Text style={styles.targetLabel}>Intake</Text><Text style={styles.targetValue}>{totalConsumed}<Text style={styles.unitSmall}> CAL</Text></Text></View>
@@ -1477,8 +1482,14 @@ function AppContent() {
   );
 }
 
-export default function App() { return <SafeAreaProvider><AppContent /></SafeAreaProvider>; }
-
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      <AppContent />
+    </SafeAreaProvider>
+  );
+}
 const styles = StyleSheet.create({
   cameraTabContainer: { flex: 1, backgroundColor: '#FBFBFB' },
   header: { paddingHorizontal: 20, paddingBottom: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
@@ -1498,6 +1509,16 @@ const styles = StyleSheet.create({
   profileItem: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 10 },
   profileItemText: { color: '#FFF', fontSize: 11, fontWeight: '700', marginLeft: 5 },
   stripDivider: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 5 },
+  badgeEditIcon: {
+    position: 'absolute',
+    top: 12,
+    right: 14,
+    zIndex: 5,
+    opacity: 0.8,
+    backgroundColor: '#F5F5F5',
+    padding: 4,
+    borderRadius: 10,
+  },
   btnActionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
