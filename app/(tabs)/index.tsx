@@ -160,13 +160,9 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         { accessType: 'read', recordType: 'TotalCaloriesBurned' }
       ]);
 
-      const totalCaloriesBurnedPermission = granted.some(
-        (p: any) => p.recordType === 'TotalCaloriesBurned'
-      );
-
-      if (!totalCaloriesBurnedPermission) {
+      const hasPermission = granted.some(p => p.recordType === 'TotalCaloriesBurned');
+      if (!hasPermission) {
         Alert.alert("Permission Required", "Please enable 'Total Calories Burned' in Health Connect.");
-        setIsSyncing(false);
         return;
       }
 
@@ -174,7 +170,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       startOfDay.setHours(0, 0, 0, 0);
       const now = new Date();
 
-      // 1. Get the absolute total from Health Connect
+      // 1. Get the absolute total for today from Health Connect
       const aggregation = await aggregateRecord({
         recordType: 'TotalCaloriesBurned',
         timeRangeFilter: {
@@ -190,24 +186,21 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       }
 
       if (healthTotal > 0 && userId) {
-        // 2. Calculate how many "Health Sync" calories we've ALREADY logged today
-        const existingSyncCalories = activities
-          .filter(act => act.type === "Health Sync")
-          .reduce((sum, act) => sum + (act.caloriesBurned || 0), 0);
+        // 2. Identify today's unique sync ID (e.g., "sync_2023-10-27")
+        // This ensures we only have ONE document per day
+        const dateId = now.toISOString().split('T')[0];
+        const syncDocId = `health_sync_${dateId}`;
+        const syncRef = doc(db, 'users', userId, 'activities', syncDocId);
 
-        // 3. Only log the DIFFERENCE
-        const incrementalCalories = healthTotal - existingSyncCalories;
-
-        if (incrementalCalories > 0) {
-          await addDoc(collection(db, 'users', userId, 'activities'), {
-            type: "Health Sync",
-            icon: "google-fit",
-            duration: 0,
-            caloriesBurned: incrementalCalories,
-            date: new Date().toISOString(),
-            createdAt: serverTimestamp(),
-          });
-        }
+        // 3. Overwrite/Set the document with the latest total
+        await setDoc(syncRef, {
+          type: "Health Sync",
+          icon: "google-fit",
+          duration: 0,
+          caloriesBurned: healthTotal, // This is now the absolute total
+          date: now.toISOString(),
+          createdAt: serverTimestamp(), // Keeps it at the top of today's list
+        }, { merge: true });
 
         const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         setLastSyncedTime(timestamp);
