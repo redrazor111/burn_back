@@ -3,7 +3,7 @@ import { auth, db } from '@/utils/firebaseConfig';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     LayoutAnimation,
     Modal,
@@ -49,10 +49,7 @@ const getOrdinalDate = (dateKey) => {
     return `${day}${suffix} ${month} ${year}`;
 };
 
-// Chart Constants for alignment
-const CHART_TOTAL_HEIGHT = 320;
-const GRAPH_BASELINE_OFFSET = 60; // Space for dates at the bottom
-const MAX_BAR_HEIGHT = 220; // Actual pixels available for the bars to grow
+const HALF_HEIGHT = 130;
 
 export default function HistorySummary() {
     const insets = useSafeAreaInsets();
@@ -68,7 +65,7 @@ export default function HistorySummary() {
     const [showShop, setShowShop] = useState(false);
     const [showGuide, setShowGuide] = useState(false);
     const [showPremium, setShowPremium] = useState(false);
-    const chartScrollRef = React.useRef(null);
+    const chartScrollRef = useRef(null);
 
     useEffect(() => {
         const user = auth.currentUser;
@@ -96,6 +93,17 @@ export default function HistorySummary() {
             setShowPremium(true);
         }
     };
+
+    useEffect(() => {
+        if (isFocused) {
+            setExpandedSections({});
+            setShowPremium(false);
+            setShowShop(false);
+            setShowChart(false);
+            setShowGuide(false);
+        }
+    }, [isFocused]);
+
     const getSafeDateKey = (dateString) => {
         if (!dateString) return "Unknown";
         const d = new Date(dateString);
@@ -105,7 +113,7 @@ export default function HistorySummary() {
 
     const { stats, maxVal } = useMemo(() => {
         const groups = {};
-        let currentMax = targetCalories;
+        let maxBalanceFound = 0;
         const lowerQuery = searchQuery.toLowerCase().trim();
 
         meals.forEach(m => {
@@ -127,14 +135,14 @@ export default function HistorySummary() {
         });
 
         Object.keys(groups).forEach(key => {
-            const balance = Math.abs(targetCalories + groups[key].burned - groups[key].intake);
-            if (balance > currentMax) currentMax = balance;
+            const netIntake = groups[key].intake - groups[key].burned;
+            const balance = targetCalories - netIntake;
+            const absDiff = Math.abs(balance);
+            if (absDiff > maxBalanceFound) maxBalanceFound = absDiff;
         });
 
-        // Round up to nearest 500 for cleaner Y-axis
-        const roundedMax = Math.ceil(currentMax / 500) * 500;
-
-        return { stats: groups, maxVal: roundedMax };
+        const scaleLimit = Math.max(maxBalanceFound + 450, 600);
+        return { stats: groups, maxVal: scaleLimit * 2 };
     }, [meals, activities, targetCalories, searchQuery]);
 
     const todayStats = useMemo(() => {
@@ -147,26 +155,30 @@ export default function HistorySummary() {
 
     const averages = useMemo(() => {
         const now = new Date();
-        const todayKey = getSafeDateKey(now.toISOString());
         const oneWeekAgo = new Date().setDate(now.getDate() - 7);
         const oneMonthAgo = new Date().setDate(now.getDate() - 30);
         const oneYearAgo = new Date().setDate(now.getDate() - 365);
-        const getAvg = (sinceDate) => {
+
+        const getAvgBalance = (sinceDate) => {
             const relevantDays = Object.keys(stats).filter(key => {
                 const dayDate = new Date(key);
-                return dayDate >= sinceDate && stats[key].intake > 0;
+                return dayDate >= sinceDate && (stats[key].intake > 0 || stats[key].burned > 0);
             });
             if (relevantDays.length === 0) return 0;
-            const total = relevantDays.reduce((sum, key) => sum + stats[key].intake, 0);
-            return Math.round(total / relevantDays.length);
+            const totalBalance = relevantDays.reduce((sum, key) => {
+                const dayBalance = targetCalories + stats[key].burned - stats[key].intake;
+                return sum + dayBalance;
+            }, 0);
+            return Math.round(totalBalance / relevantDays.length);
         };
+
         return {
-            today: stats[todayKey]?.intake || 0,
-            weekly: getAvg(oneWeekAgo),
-            monthly: getAvg(oneMonthAgo),
-            yearly: getAvg(oneYearAgo)
+            today: todayStats.remaining,
+            weekly: getAvgBalance(oneWeekAgo),
+            monthly: getAvgBalance(oneMonthAgo),
+            yearly: getAvgBalance(oneYearAgo)
         };
-    }, [stats]);
+    }, [stats, targetCalories, todayStats]);
 
     const toggleSection = (key) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -215,9 +227,7 @@ export default function HistorySummary() {
                         onChangeText={setSearchQuery}
                     />
                     {searchQuery.length > 0 && (
-                        <TouchableOpacity onPress={() => setSearchQuery('')}>
-                            <Ionicons name="close-circle" size={16} color="#CCC" />
-                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setSearchQuery('')}><Ionicons name="close-circle" size={16} color="#CCC" /></TouchableOpacity>
                     )}
                 </View>
 
@@ -230,28 +240,16 @@ export default function HistorySummary() {
 
                     return (
                         <View key={dateKey} style={styles.daySection}>
-                            <TouchableOpacity
-                                style={[styles.summaryCard, !isDeficit && styles.summaryCardSurplus]}
-                                onPress={() => toggleSection(dateKey)}
-                                activeOpacity={0.9}
-                            >
+                            <TouchableOpacity style={[styles.summaryCard, !isDeficit && styles.summaryCardSurplus]} onPress={() => toggleSection(dateKey)} activeOpacity={0.9}>
                                 <View style={styles.cardTop}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                         <Text style={styles.dateText}>{readableDate}</Text>
-                                        <MaterialCommunityIcons
-                                            name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"}
-                                            size={20}
-                                            color="#999"
-                                            style={{ marginLeft: 5 }}
-                                        />
+                                        <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#999" style={{ marginLeft: 5 }} />
                                     </View>
                                     <View style={[styles.statusBadge, { backgroundColor: isDeficit ? '#E8F5E9' : '#FFEBEE' }]}>
-                                        <Text style={[styles.statusText, { color: isDeficit ? '#2E7D32' : '#C62828' }]}>
-                                            {isDeficit ? 'UNDER' : 'OVER'}
-                                        </Text>
+                                        <Text style={[styles.statusText, { color: isDeficit ? '#2E7D32' : '#C62828' }]}>{isDeficit ? 'UNDER' : 'OVER'}</Text>
                                     </View>
                                 </View>
-
                                 <View style={styles.mathRow}>
                                     <View style={styles.mathItem}><Text style={styles.mathLabel}>Goal</Text><Text style={styles.mathValue}>{targetCalories}</Text></View>
                                     <Text style={styles.mathOperator}>+</Text>
@@ -259,26 +257,12 @@ export default function HistorySummary() {
                                     <Text style={styles.mathOperator}>-</Text>
                                     <View style={styles.mathItem}><Text style={styles.mathLabel}>In</Text><Text style={styles.mathValue}>{data.intake}</Text></View>
                                     <Text style={styles.mathOperator}>=</Text>
-                                    <View style={styles.mathItem}>
-                                        <Text style={styles.mathLabel}>Balance</Text>
-                                        <Text style={[styles.mathValue, { color: isDeficit ? '#1B4D20' : '#C62828' }]}>{Math.abs(netRemaining)}</Text>
-                                    </View>
+                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Balance</Text><Text style={[styles.mathValue, { color: isDeficit ? '#1B4D20' : '#C62828' }]}>{Math.abs(netRemaining)}</Text></View>
                                 </View>
-
                                 {(expandedSections[dateKey] || searchQuery) && (
                                     <View style={styles.detailsList}>
-                                        {data.rawMeals.map(m => (
-                                            <View key={m.id} style={styles.detailRow}>
-                                                <Text style={styles.detailName}>{m.productName || m.identifiedProduct}</Text>
-                                                <Text style={styles.detailValue}>-{m.calories}</Text>
-                                            </View>
-                                        ))}
-                                        {data.rawActs.map(a => (
-                                            <View key={a.id} style={styles.detailRow}>
-                                                <Text style={[styles.detailName, { color: '#1B4D20' }]}>{a.type || 'Exercise'}</Text>
-                                                <Text style={[styles.detailValue, { color: '#1B4D20' }]}>+{a.caloriesBurned}</Text>
-                                            </View>
-                                        ))}
+                                        {data.rawMeals.map(m => (<View key={m.id} style={styles.detailRow}><Text style={styles.detailName}>{m.productName || m.identifiedProduct}</Text><Text style={styles.detailValue}>-{m.calories}</Text></View>))}
+                                        {data.rawActs.map(a => (<View key={a.id} style={styles.detailRow}><Text style={[styles.detailName, { color: '#1B4D20' }]}>{a.type || 'Exercise'}</Text><Text style={[styles.detailValue, { color: '#1B4D20' }]}>+{a.caloriesBurned}</Text></View>))}
                                     </View>
                                 )}
                             </TouchableOpacity>
@@ -290,100 +274,79 @@ export default function HistorySummary() {
             <Modal visible={showChart} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowChart(false)}>
                 <View style={styles.modalContainer}>
                     <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
-                        <Text style={styles.modalTitle}>Daily Balance Trends</Text>
-                        <TouchableOpacity onPress={() => setShowChart(false)}>
-                            <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
-                        </TouchableOpacity>
+                        <Text style={styles.modalTitle}>Balance Trends</Text>
+                        <TouchableOpacity onPress={() => setShowChart(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity>
                     </View>
 
-                    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10 }}>
+                    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 50 }}>
                         <View style={styles.averagesContainer}>
                             <View style={{ flexDirection: 'row', marginBottom: 10 }}>
-                                <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9' }]}>
-                                    <Text style={styles.avgLabelCenter}>TODAY</Text>
-                                    <Text style={styles.avgValueCenter}>{averages.today.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                                </View>
-                                <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#FFF8E1' }]}>
-                                    <Text style={styles.avgLabelCenter}>DAILY GOAL</Text>
-                                    <Text style={[styles.avgValueCenter, { color: '#B8860B' }]}>{targetCalories.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                                </View>
+                                <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9' }]}><Text style={styles.avgLabelCenter}>TODAY</Text><Text style={styles.avgValueCenter}>{averages.today.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text></View>
+                                <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}><Text style={styles.avgLabelCenter}>DAILY AVG (WEEK)</Text><Text style={styles.avgValueCenter}>{averages.weekly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text></View>
                             </View>
                             <View style={{ flexDirection: 'row', marginBottom: 10 }}>
-                                <View style={styles.avgBoxSmall}>
-                                    <Text style={styles.avgLabelCenter}>DAILY AVG (WEEK)</Text>
-                                    <Text style={styles.avgValueCenter}>{averages.weekly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                                </View>
-                                <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
-                                    <Text style={styles.avgLabelCenter}>DAILY AVG (MONTH)</Text>
-                                    <Text style={styles.avgValueCenter}>{averages.monthly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                                </View>
-                            </View>
-
-                            <View style={{ flexDirection: 'row' }}>
-                                <View style={[styles.avgBoxSmall, { backgroundColor: '#F1F8E9' }]}>
-                                    <Text style={styles.avgLabelCenter}>DAILY AVG (YEAR)</Text>
-                                    <Text style={styles.avgValueCenter}>
-                                        {averages.yearly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text>
-                                    </Text>
-                                </View>
+                                <View style={styles.avgBoxSmall}><Text style={styles.avgLabelCenter}>DAILY AVG (MONTH)</Text><Text style={styles.avgValueCenter}>{averages.monthly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text></View>
+                                <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9' }]}><Text style={styles.avgLabelCenter}>DAILY AVG (YEAR)</Text><Text style={styles.avgValueCenter}>{averages.yearly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text></View>
                             </View>
                         </View>
 
                         <View style={styles.comparisonCard}>
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
                                 <Text style={styles.comparisonTitle}>Remaining Calories History</Text>
-                                <View style={{ backgroundColor: '#1B4D20', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
+                                <View style={{ backgroundColor: '#B8860B', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
                                     <Text style={{ fontSize: 10, color: '#FFF', fontWeight: 'bold' }}>GOAL: {targetCalories}</Text>
                                 </View>
                             </View>
 
-                            {/* CHART WITH PERFECTLY ALIGNED Y-AXIS */}
-                            <View style={{ flexDirection: 'row', height: CHART_TOTAL_HEIGHT }}>
-                                <View style={{ width: 45, paddingBottom: GRAPH_BASELINE_OFFSET, justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 8 }}>
-                                    <Text style={styles.yAxisText}>{maxVal}</Text>
-                                    <Text style={styles.yAxisText}>{Math.round(maxVal / 2)}</Text>
-                                    <Text style={styles.yAxisText}>0</Text>
+                            <View style={{ flexDirection: 'row', height: 320, marginTop: 20 }}>
+                                <View style={{ width: 95, height: 260, justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 12 }}>
+                                    <Text style={styles.yAxisText}>{targetCalories + (maxVal / 2)}</Text>
+                                    <View style={{ position: 'absolute', top: HALF_HEIGHT - 7 }}><Text style={[styles.yAxisText, { color: '#B8860B', fontWeight: '900' }]}>{targetCalories} cal</Text></View>
+                                    <Text style={styles.yAxisText}>{targetCalories - (maxVal / 2)}</Text>
                                 </View>
 
-                                <View style={[styles.chartWrapper, { flex: 1, backgroundColor: 'transparent' }]}>
-                                    <ScrollView
-                                        horizontal
-                                        ref={chartScrollRef}
-                                        showsHorizontalScrollIndicator={false}
-                                        onContentSizeChange={() => chartScrollRef.current?.scrollToEnd({ animated: true })}
-                                        contentContainerStyle={[styles.chartScrollContent, { paddingBottom: GRAPH_BASELINE_OFFSET }]}
-                                    >
+                                <View style={[styles.chartWrapper, { flex: 1, height: 260 }]}>
+                                    <View style={[styles.targetBaseline, { top: HALF_HEIGHT }]} />
+                                    <ScrollView horizontal ref={chartScrollRef} showsHorizontalScrollIndicator={false} style={{ overflow: 'visible' }} contentContainerStyle={{ paddingHorizontal: 15, alignItems: 'center', height: 260, overflow: 'visible' }}>
                                         {sortedDates.slice().reverse().map((dateKey) => {
                                             const data = stats[dateKey] || { intake: 0, burned: 0 };
-                                            const balance = targetCalories + data.burned - data.intake;
-
-                                            // Scale calculation synchronized with Y-Axis
-                                            const barHeight = (Math.abs(balance) / maxVal) * MAX_BAR_HEIGHT;
+                                            const balance = targetCalories - (data.intake - data.burned);
                                             const isOver = balance < 0;
+                                            const barHeight = (Math.abs(balance) / (maxVal / 2)) * HALF_HEIGHT;
+
+                                            const parts = dateKey.split('-');
+                                            const isNA = new Intl.DateTimeFormat().resolvedOptions().timeZone.includes('America');
+                                            const dDate = isNA ? `${parts[1]}/${parts[2]}` : `${parts[2]}/${parts[1]}`;
 
                                             return (
-                                                <View key={dateKey} style={[styles.barColumn, { justifyContent: 'flex-end', height: MAX_BAR_HEIGHT + 40 }]}>
-                                                    <View style={[styles.barBase, {
-                                                        height: Math.max(barHeight, 4),
-                                                        backgroundColor: isOver ? '#FF5252' : '#4CAF50',
-                                                        width: 28,
-                                                        borderRadius: 6,
-                                                    }]} />
-                                                    <Text style={[styles.barDateText, { fontSize: 9 }]}>{dateKey.split('-').slice(1).join('/')}</Text>
+                                                <View key={dateKey} style={[styles.barColumn, { height: 260 }]}>
+                                                    <View style={styles.chartHalfUnder}>
+                                                        {!isOver && balance !== 0 && (
+                                                            <>
+                                                                <Text style={[styles.barValueText, { color: '#2E7D32', marginBottom: 4 }]}>+{Math.round(balance)}</Text>
+                                                                <View style={[styles.barBase, { height: barHeight, backgroundColor: '#4CAF50' }]} />
+                                                            </>
+                                                        )}
+                                                    </View>
+                                                    <View style={styles.chartHalfOver}>
+                                                        {isOver && (
+                                                            <>
+                                                                <View style={[styles.barBase, { height: barHeight, backgroundColor: '#FF5252' }]} />
+                                                                <Text style={[styles.barValueText, { color: '#C62828', marginTop: 4 }]}>{Math.round(balance)}</Text>
+                                                            </>
+                                                        )}
+                                                    </View>
+                                                    <Text style={styles.barDateTextAbsolute}>{dDate}</Text>
                                                 </View>
                                             );
                                         })}
                                     </ScrollView>
                                 </View>
                             </View>
-                            <Text style={styles.graphHint}>Green: Under Goal | Red: Over Goal</Text>
+                            <Text style={styles.chartHint}>Daily calorie trend summary</Text>
                         </View>
-                        <View style={{ height: 40 }} />
                     </ScrollView>
-
-                    <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}>
-                        <Text style={styles.bottomCloseBtnText}>Close</Text>
-                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
                 </View>
             </Modal>
 
@@ -429,23 +392,26 @@ const styles = StyleSheet.create({
     detailRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
     detailName: { fontSize: 12, color: '#666', fontWeight: '600' },
     detailValue: { fontSize: 12, fontWeight: '800', color: '#C62828' },
-    chartWrapper: { backgroundColor: '#F9F9F9', borderRadius: 16, position: 'relative', overflow: 'hidden' },
-    barBase: { width: 30, borderRadius: 6, minHeight: 4 },
-    yAxisText: { fontSize: 9, color: '#999', fontWeight: 'bold' },
-    graphHint: { textAlign: 'center', fontSize: 11, color: '#999', marginTop: 15, fontStyle: 'italic' },
     modalContainer: { flex: 1, backgroundColor: '#FFF' },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
     modalTitle: { fontSize: 24, fontWeight: '900', color: '#1B4D20' },
-    bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center', marginBottom: 20 },
+    bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
     bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
-    comparisonCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 20, marginVertical: 10, borderWidth: 1, borderColor: '#EEE', elevation: 3 },
+    comparisonCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 20, paddingBottom: 45, marginVertical: 10, borderWidth: 1, borderColor: '#EEE', elevation: 3 },
     comparisonTitle: { fontSize: 16, fontWeight: '900', color: '#1B4D20' },
-    chartScrollContent: { paddingHorizontal: 20, alignItems: 'flex-end' },
-    barColumn: { width: 45, alignItems: 'center', marginHorizontal: 6 },
-    barDateText: { fontSize: 10, color: '#999', marginTop: 8, fontWeight: '700', width: 40, textAlign: 'center' },
     averagesContainer: { flexDirection: 'column', marginBottom: 20, marginTop: 5 },
     avgBoxSmall: { flex: 1, backgroundColor: '#F8F9FA', padding: 15, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     avgLabelCenter: { fontSize: 9, fontWeight: '800', color: '#9E9E9E', marginBottom: 5, textAlign: 'center' },
     avgValueCenter: { fontSize: 18, fontWeight: '900', color: '#1B4D20' },
     avgUnit: { fontSize: 12, fontWeight: '400', color: '#666' },
+    chartWrapper: { backgroundColor: '#F9F9F9', borderRadius: 16, overflow: 'visible' },
+    targetBaseline: { position: 'absolute', left: 0, right: 0, height: 2, backgroundColor: '#B8860B', zIndex: 5 },
+    barColumn: { width: 65, marginHorizontal: 4, alignItems: 'center', overflow: 'visible' },
+    barBase: { width: 24, borderRadius: 4 },
+    barValueText: { fontSize: 10, fontWeight: '900', textAlign: 'center', width: 60, zIndex: 10 },
+    barDateTextAbsolute: { position: 'absolute', bottom: -28, fontSize: 9, color: '#999', fontWeight: '700', width: 50, textAlign: 'center' },
+    chartHalfUnder: { height: HALF_HEIGHT, justifyContent: 'flex-end', alignItems: 'center', width: '100%' },
+    chartHalfOver: { height: HALF_HEIGHT, justifyContent: 'flex-start', alignItems: 'center', width: '100%' },
+    yAxisText: { fontSize: 9, color: '#999', fontWeight: '700' },
+    chartHint: { textAlign: 'center', fontSize: 11, color: '#AAA', fontWeight: '600', marginTop: 45 }
 });

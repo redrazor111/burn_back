@@ -1,10 +1,10 @@
 /* eslint-disable react/no-unescaped-entities */
 import { auth, db } from '@/utils/firebaseConfig';
-import { useSubscriptionStatus } from '@/utils/subscription'; // Assuming this is your path
+import { useSubscriptionStatus } from '@/utils/subscription';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutAnimation,
   Modal,
@@ -14,13 +14,11 @@ import {
   Text,
   TouchableOpacity,
   UIManager,
-  View,
-  useWindowDimensions
+  View
 } from 'react-native';
-import { LineChart } from "react-native-chart-kit";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Import your Shop component
+// Component Imports
 import Guide from '../components/Guide';
 import Shop from '../components/Shop';
 import PremiumModal from './PremiumModal';
@@ -32,13 +30,12 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 export default function ActivityHistory() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
-  const { width: windowWidth } = useWindowDimensions();
   const [history, setHistory] = useState([]);
   const [expandedSections, setExpandedSections] = useState({});
   const [userId, setUserId] = useState(auth.currentUser?.uid);
-    const { isPro } = useSubscriptionStatus();
+  const { isPro } = useSubscriptionStatus();
+  const chartScrollRef = useRef(null);
 
-  // Modal States
   const [showChart, setShowChart] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showShop, setShowShop] = useState(false);
@@ -62,14 +59,10 @@ export default function ActivityHistory() {
   useEffect(() => {
     if (!userId) return;
     const q = query(collection(db, 'users', userId, 'activities'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const activityData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setHistory(activityData);
-    }, (error) => console.error("Firebase Activity Error:", error));
-    return () => unsubscribe();
+    const actsUnsub = onSnapshot(q, (snapshot) => {
+      setHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => { actsUnsub(); };
   }, [userId]);
 
     const handleOpenChart = () => {
@@ -98,66 +91,40 @@ export default function ActivityHistory() {
     return groups;
   }, [history]);
 
-  const todayBurned = useMemo(() => {
-    const todayKey = getSafeDateKey(new Date().toISOString());
-    return groupedData[todayKey]?.totalBurned || 0;
-  }, [groupedData]);
-
-  const weeklyStats = useMemo(() => {
+  const averages = useMemo(() => {
     const now = new Date();
-    const getSumForRange = (daysAgoStart, daysAgoEnd) => {
-      let total = 0;
-      for (let i = daysAgoStart; i <= daysAgoEnd; i++) {
-        const d = new Date();
-        d.setDate(now.getDate() - i);
-        const key = getSafeDateKey(d.toISOString());
-        total += groupedData[key]?.totalBurned || 0;
-      }
-      return total;
+    const oneWeekAgo = new Date(); oneWeekAgo.setDate(now.getDate() - 7);
+    const oneMonthAgo = new Date(); oneMonthAgo.setDate(now.getDate() - 30);
+    const oneYearAgo = new Date(); oneYearAgo.setDate(now.getDate() - 365);
+
+    const getAvgBurn = (sinceDate) => {
+        const relevantDays = Object.keys(groupedData).filter(key => {
+            const dayDate = new Date(key.replace(/\//g, '-'));
+            return dayDate >= sinceDate;
+        });
+        if (relevantDays.length === 0) return 0;
+        const total = relevantDays.reduce((sum, key) => sum + groupedData[key].totalBurned, 0);
+        return Math.round(total / relevantDays.length);
     };
-    const thisWeek = getSumForRange(0, 6);
-    const lastWeek = getSumForRange(7, 13);
-    const diff = thisWeek - lastWeek;
-    const percent = lastWeek > 0 ? (diff / lastWeek) * 100 : 0;
-    return { thisWeek, lastWeek, diff, percent: percent.toFixed(1) };
-  }, [groupedData]);
 
-  const { chartData, monthlyAverage, dailyAverage } = useMemo(() => {
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const monthlyTotals = {};
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date();
-      d.setMonth(d.getMonth() - i);
-      const ymKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      monthlyTotals[ymKey] = { label: monthNames[d.getMonth()], total: 0 };
-    }
-    Object.keys(groupedData).forEach(dateKey => {
-      if (dateKey === "Unknown") return;
-      const [year, month] = dateKey.split('/');
-      const ymKey = `${year}-${month}`;
-      if (monthlyTotals[ymKey]) monthlyTotals[ymKey].total += groupedData[dateKey].totalBurned;
-    });
-
-    const finalData = Object.values(monthlyTotals).map(m => m.total);
-    const activeMonths = finalData.filter(v => v > 0);
-    const mAvg = activeMonths.length > 0 ? Math.round(activeMonths.reduce((a, b) => a + b, 0) / activeMonths.length) : 0;
-
-    const dailyValues = Object.keys(groupedData)
-      .filter(key => key !== "Unknown")
-      .map(key => groupedData[key].totalBurned);
-    const dAvg = dailyValues.length > 0 ? Math.round(dailyValues.reduce((a, b) => a + b, 0) / dailyValues.length) : 0;
-
-    if (finalData.every(v => v === 0)) return { chartData: null, monthlyAverage: 0, dailyAverage: 0 };
+    const todayKey = getSafeDateKey(new Date().toISOString());
+    const todayBurned = groupedData[todayKey]?.totalBurned || 0;
 
     return {
-      monthlyAverage: mAvg,
-      dailyAverage: dAvg,
-      chartData: {
-        labels: Object.values(monthlyTotals).map((m, i) => (i % 2 === 0 ? m.label : "")),
-        datasets: [{ data: finalData, color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`, strokeWidth: 2 }],
-        legend: ["Annual Burn History"]
-      }
+        today: todayBurned,
+        weekly: getAvgBurn(oneWeekAgo),
+        monthly: getAvgBurn(oneMonthAgo),
+        yearly: getAvgBurn(oneYearAgo)
     };
+  }, [groupedData]);
+
+  const { sortedDates, maxVal } = useMemo(() => {
+    const dates = Object.keys(groupedData).sort((a, b) => a.localeCompare(b));
+    let highestBurn = 0;
+    dates.forEach(key => {
+      if (groupedData[key].totalBurned > highestBurn) highestBurn = groupedData[key].totalBurned;
+    });
+    return { sortedDates: dates, maxVal: Math.max(highestBurn + 150, 500) };
   }, [groupedData]);
 
   const toggleSection = (section) => {
@@ -165,15 +132,10 @@ export default function ActivityHistory() {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const getReadableDate = (dateKey) => {
+  const getFullReadableDate = (dateKey) => {
     if (!dateKey || dateKey === "Unknown") return "Unknown Date";
     const parts = dateKey.split('/');
     const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-    const now = new Date();
-    if (date.toDateString() === now.toDateString()) return "Today";
-    const yesterday = new Date();
-    yesterday.setDate(now.getDate() - 1);
-    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
     return `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
   };
 
@@ -195,55 +157,41 @@ export default function ActivityHistory() {
           </View>
         </View>
         <View style={styles.headerAccentBar} />
-
         <View style={styles.todaySummaryCard}>
           <View>
             <Text style={styles.todayLabel}>TODAY'S CALORIES BURNED</Text>
-            <Text style={styles.todayValue}>{todayBurned.toLocaleString()} <Text style={styles.todayUnit}>cal</Text></Text>
+            <Text style={styles.todayValue}>{averages.today.toLocaleString()} <Text style={styles.todayUnit}>cal</Text></Text>
           </View>
-          <View style={styles.burnIconBg}>
-            <MaterialCommunityIcons name="fire" size={28} color="#FF9800" />
-          </View>
+          <View style={styles.burnIconBg}><MaterialCommunityIcons name="fire" size={32} color="#FF9800" /></View>
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContentList} showsVerticalScrollIndicator={false}>
-        {history.length === 0 ? (
-          <View style={styles.placeholderContainer}>
-            <MaterialCommunityIcons name="run-fast" size={60} color="#E0E0E0" />
-            <Text style={styles.placeholderText}>No activities recorded yet.</Text>
-          </View>
-        ) : (
-          Object.keys(groupedData).sort((a, b) => b.localeCompare(a)).map((dateKey) => (
+        {Object.keys(groupedData).sort((a, b) => b.localeCompare(a)).map((dateKey) => (
             <View key={dateKey} style={styles.sectionContainer}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(dateKey)} activeOpacity={0.7}>
-                <View style={styles.sectionHeaderTextGroup}>
-                  <Text style={styles.sectionLabel}>{getReadableDate(dateKey).toUpperCase()}</Text>
-                  <Text style={styles.sectionTotalValue}>{groupedData[dateKey].totalBurned.toLocaleString()} cal</Text>
-                </View>
-                <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#9E9E9E" />
-              </TouchableOpacity>
-              {expandedSections[dateKey] && (
-                <View style={styles.itemsContainer}>
-                  {groupedData[dateKey].items.map((item) => (
-                    <View key={item.id} style={styles.historyCard}>
-                      <View style={styles.historyIconBg}>
-                        <MaterialCommunityIcons name={item.icon || "run"} size={26} color="#1B4D20" />
-                      </View>
-                      <View style={styles.historyDetails}>
-                        <Text style={styles.historyTime}>{item.type || 'Activity'}</Text>
-                        <Text style={styles.historyActivityName}>{item.duration ? `${item.duration} mins` : 'Active Session'}</Text>
-                      </View>
-                      <View style={styles.valueBadge}>
-                        <Text style={styles.valueText}>{item.caloriesBurned || 0} cal</Text>
-                      </View>
+                <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(dateKey)} activeOpacity={0.7}>
+                    <View style={styles.sectionHeaderTextGroup}>
+                        <Text style={styles.sectionLabel}>{getFullReadableDate(dateKey).toUpperCase()}</Text>
+                        <Text style={styles.sectionTotalValue}>{groupedData[dateKey].totalBurned.toLocaleString()} cal</Text>
                     </View>
-                  ))}
-                </View>
-              )}
+                    <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#9E9E9E" />
+                </TouchableOpacity>
+                {expandedSections[dateKey] && (
+                    <View style={styles.itemsContainer}>
+                        {groupedData[dateKey].items.map((item) => (
+                            <View key={item.id} style={styles.historyCard}>
+                                <View style={styles.historyIconBg}><MaterialCommunityIcons name={item.icon || "run"} size={26} color="#1B4D20" /></View>
+                                <View style={styles.historyDetails}>
+                                    <Text style={styles.historyTime}>{item.type || 'Activity'}</Text>
+                                    <Text style={styles.historyActivityName}>{item.duration ? `${item.duration} mins` : 'Active Session'}</Text>
+                                </View>
+                                <View style={styles.valueBadge}><Text style={styles.valueText}>{item.caloriesBurned || 0} cal</Text></View>
+                            </View>
+                        ))}
+                    </View>
+                )}
             </View>
-          ))
-        )}
+        ))}
       </ScrollView>
 
       {/* GUIDE MODAL */}
@@ -289,86 +237,80 @@ export default function ActivityHistory() {
             </TouchableOpacity>
           </View>
 
-          {/* Wrap content in a flex-1 View to push the button down */}
-          <View style={{ flex: 1 }}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
-              {chartData ? (
-                <>
-                  <View style={styles.comparisonCard}>
-                    <View style={styles.comparisonHeader}>
-                      <Text style={styles.comparisonTitle}>Weekly Burn Progress</Text>
-                      <View style={[styles.trendBadge, { backgroundColor: weeklyStats.diff >= 0 ? '#E8F5E9' : '#FFEBEE' }]} />
-                    </View>
-                    <View style={styles.comparisonRow}>
-                      <View style={styles.statBox}>
-                        <Text style={styles.compLabel}>THIS WEEK</Text>
-                        <Text style={styles.compValue}>{weeklyStats.thisWeek.toLocaleString()} <Text style={styles.compUnit}>cal</Text></Text>
-                      </View>
-                      <View style={styles.compDivider} />
-                      <View style={styles.statBox}>
-                        <Text style={styles.compLabel}>LAST WEEK</Text>
-                        <Text style={styles.compValue}>{weeklyStats.lastWeek.toLocaleString()} <Text style={styles.compUnit}>cal</Text></Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* AVERAGES SECTION */}
-                  <View style={styles.averagesContainer}>
-                    <View style={styles.avgBoxSmall}>
-                      <Text style={styles.avgLabelCenter}>DAILY AVG BURN</Text>
-                      <Text style={styles.avgValueCenter}>{dailyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                    </View>
-                    <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
-                      <Text style={styles.avgLabelCenter}>MONTHLY AVG BURN</Text>
-                      <Text style={styles.avgValueCenter}>{monthlyAverage.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.chartContainer}>
-                    <LineChart
-                      data={chartData}
-                      width={windowWidth - 40}
-                      height={220}
-                      chartConfig={{
-                        backgroundColor: "#fff",
-                        backgroundGradientFrom: "#fff",
-                        backgroundGradientTo: "#fff",
-                        decimalPlaces: 0,
-                        color: (opacity = 1) => `rgba(27, 77, 32, ${opacity})`,
-                        labelColor: (opacity = 1) => `rgba(100, 100, 100, ${opacity})`,
-                        propsForDots: { r: "4", strokeWidth: "2", stroke: "#1B4D20" },
-                        propsForLabels: { fontSize: 9 },
-                      }}
-                      bezier
-                      style={styles.chartStyle}
-                      withInnerLines={false}
-                      withOuterLines={true}
-                      withVerticalLines={false}
-                      withHorizontalLines={true}
-                    />
-                  </View>
-                  <Text style={styles.chartHint}>Yearly calorie burn summary</Text>
-                </>
-              ) : (
-                <View style={styles.noDataChart}>
-                  <MaterialCommunityIcons name="finance" size={80} color="#EEE" />
-                  <Text style={styles.placeholderText}>Not enough data for burn trends yet.</Text>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 50 }}>
+            {/* 4-BOX SUMMARY GRID */}
+            <View style={styles.averagesContainer}>
+              <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+                <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9' }]}>
+                  <Text style={styles.avgLabelCenter}>TODAY</Text>
+                  <Text style={styles.avgValueCenter}>{averages.today.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
                 </View>
-              )}
-              <View style={{ height: 20 }} />
-            </ScrollView>
-          </View>
+                <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
+                  <Text style={styles.avgLabelCenter}>DAILY AVG (WEEK)</Text>
+                  <Text style={styles.avgValueCenter}>{averages.weekly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                </View>
+              </View>
 
-          {/* Pin the Close button to the bottom, outside the ScrollView */}
-          <TouchableOpacity
-            style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]}
-            onPress={() => setShowChart(false)}
-          >
-            <Text style={styles.bottomCloseBtnText}>{chartData ? "Close" : "Go Back"}</Text>
-          </TouchableOpacity>
+              <View style={{ flexDirection: 'row' }}>
+                <View style={styles.avgBoxSmall}>
+                  <Text style={styles.avgLabelCenter}>DAILY AVG (MONTH)</Text>
+                  <Text style={styles.avgValueCenter}>{averages.monthly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                </View>
+                <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9' }]}>
+                  <Text style={styles.avgLabelCenter}>DAILY AVG (YEAR)</Text>
+                  <Text style={styles.avgValueCenter}>{averages.yearly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.comparisonCard}>
+              <View style={styles.comparisonHeader}><Text style={styles.comparisonTitle}>Daily Activity History</Text></View>
+
+              <View style={{ flexDirection: 'row', height: 320, marginTop: 20 }}>
+                <View style={{ width: 85, height: 260, justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 12 }}>
+                  <Text style={styles.yAxisText}>{maxVal}</Text>
+                  <Text style={styles.yAxisText}>{Math.round(maxVal / 2)}</Text>
+                  <Text style={styles.yAxisText}>0</Text>
+                </View>
+
+                <View style={[styles.chartWrapper, { flex: 1, height: 260 }]}>
+                  <ScrollView
+                    horizontal
+                    ref={chartScrollRef}
+                    showsHorizontalScrollIndicator={false}
+                    style={{ overflow: 'visible' }}
+                    contentContainerStyle={{ paddingHorizontal: 15, alignItems: 'flex-end', height: 260, overflow: 'visible' }}
+                  >
+                    {sortedDates.map((dateKey) => {
+                      const dayBurn = groupedData[dateKey].totalBurned;
+                      const barHeight = (dayBurn / maxVal) * 260;
+
+                      const parts = dateKey.split('/');
+                      const isNorthAmerica = new Intl.DateTimeFormat().resolvedOptions().timeZone.includes('America');
+                      const displayDate = isNorthAmerica
+                        ? `${parts[1]}/${parts[2]}`
+                        : `${parts[2]}/${parts[1]}`;
+
+                      return (
+                        <View key={dateKey} style={styles.barColumn}>
+                          {dayBurn > 0 && <Text style={styles.barValueText}>+{Math.round(dayBurn)}</Text>}
+                          <View style={[styles.barBase, { height: Math.max(barHeight, 4) }]} />
+                          <Text style={styles.barDateTextAbsolute}>{displayDate}</Text>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              </View>
+              <Text style={styles.chartHint}>Daily calorie burn summary</Text>
+            </View>
+          </ScrollView>
+          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
         </View>
       </Modal>
 
+      <Modal visible={showGuide} animationType="slide" presentationStyle="pageSheet"><View style={styles.modalContainer}><View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}><Text style={styles.modalTitle}>Health Guide</Text><TouchableOpacity onPress={() => setShowGuide(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity></View><View style={{ flex: 1 }}><Guide /></View><TouchableOpacity style={styles.bottomCloseBtn} onPress={() => setShowGuide(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity></View></Modal>
+      <Modal visible={showShop} animationType="slide" presentationStyle="pageSheet"><View style={styles.modalContainer}><View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}><Text style={styles.modalTitle}>Shop at Amazon</Text><TouchableOpacity onPress={() => setShowShop(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity></View><View style={{ flex: 1 }}><Shop /></View><TouchableOpacity style={styles.bottomCloseBtn} onPress={() => setShowShop(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity></View></Modal>
       <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} />
     </View>
   );
@@ -382,11 +324,11 @@ const styles = StyleSheet.create({
   actionBtn: { marginLeft: 15 },
   title: { fontSize: 22, fontWeight: '900', color: '#1B4D20', letterSpacing: -0.5 },
   headerAccentBar: { width: 45, height: 4, backgroundColor: '#1B4D20', opacity: 0.2, borderRadius: 2, marginTop: 4, marginBottom: 15 },
-  todaySummaryCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1B4D20', padding: 18, borderRadius: 20, elevation: 8 },
+  todaySummaryCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1B4D20', padding: 20, borderRadius: 24, elevation: 8 },
   todayLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   todayValue: { color: '#FFF', fontSize: 26, fontWeight: '900' },
   todayUnit: { fontSize: 14, fontWeight: '400', opacity: 0.8 },
-  burnIconBg: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12 },
+  burnIconBg: { backgroundColor: 'rgba(255,255,255,0.15)', padding: 10, borderRadius: 15 },
   scrollContentList: { paddingHorizontal: 20, paddingBottom: 40 },
   sectionContainer: { marginTop: 20 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#EEE' },
@@ -403,27 +345,24 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: '#FFF' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   modalTitle: { fontSize: 24, fontWeight: '900', color: '#1B4D20' },
-  comparisonCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, marginVertical: 15, borderWidth: 1, borderColor: '#EEE' },
+  comparisonCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 20, paddingBottom: 45, marginVertical: 10, borderWidth: 1, borderColor: '#EEE', elevation: 3 },
   comparisonHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   comparisonTitle: { fontSize: 16, fontWeight: '800', color: '#212529' },
-  trendBadge: { width: 12, height: 12, borderRadius: 6 },
-  comparisonRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
-  statBox: { alignItems: 'center' },
-  compLabel: { fontSize: 9, fontWeight: '800', color: '#9E9E9E', marginBottom: 5 },
-  compValue: { fontSize: 18, fontWeight: '900', color: '#1B4D20' },
-  compUnit: { fontSize: 11, fontWeight: '400', color: '#666' },
-  compDivider: { width: 1, height: 30, backgroundColor: '#EEE' },
-  averagesContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+  averagesContainer: { flexDirection: 'column', marginBottom: 20, marginTop: 5 },
   avgBoxSmall: { flex: 1, backgroundColor: '#F8F9FA', padding: 15, borderRadius: 20, alignItems: 'center' },
   avgLabelCenter: { fontSize: 9, fontWeight: '800', color: '#9E9E9E', marginBottom: 5 },
   avgValueCenter: { fontSize: 18, fontWeight: '900', color: '#1B4D20' },
   avgUnit: { fontSize: 12, fontWeight: '400', color: '#666' },
-  chartContainer: { alignItems: 'center', marginTop: 10 },
-  chartStyle: { borderRadius: 16, paddingRight: 40 },
-  chartHint: { textAlign: 'center', fontSize: 11, color: '#AAA', fontWeight: '600', marginTop: 5 },
-  bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+  chartWrapper: { backgroundColor: '#F9F9F9', borderRadius: 16, overflow: 'visible' },
+  barColumn: { width: 65, marginHorizontal: 4, alignItems: 'center', justifyContent: 'flex-end', height: 260, overflow: 'visible' },
+  barBase: { width: 26, borderTopLeftRadius: 6, borderTopRightRadius: 6, backgroundColor: '#1B4D20' },
+  barValueText: { fontSize: 10, fontWeight: '900', textAlign: 'center', width: 60, zIndex: 10, color: '#1B4D20', marginBottom: 4 },
+  barDateTextAbsolute: { position: 'absolute', bottom: -28, fontSize: 8, color: '#999', fontWeight: '700', width: 50, textAlign: 'center' },
+  yAxisText: { fontSize: 9, color: '#999', fontWeight: '700' },
+  chartHint: { textAlign: 'center', fontSize: 11, color: '#AAA', fontWeight: '600', marginTop: 45 },
+  bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
   bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   placeholderContainer: { alignItems: 'center', marginTop: 100 },
   placeholderText: { color: '#BDBDBD', marginTop: 15, fontSize: 16, textAlign: 'center' },
-  noDataChart: { flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 400 }
+  itemsContainer: { marginTop: 5 }
 });
