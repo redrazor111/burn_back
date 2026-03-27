@@ -61,7 +61,7 @@ export default function ScanHistory() {
     if (isPro) {
       setShowChart(true);
     } else {
-      setShowPremium(true);
+      setShowChart(true);
     }
   };
 

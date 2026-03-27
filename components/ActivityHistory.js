@@ -69,7 +69,7 @@ export default function ActivityHistory() {
     if (isPro) {
       setShowChart(true);
     } else {
-      setShowPremium(true);
+      setShowChart(true);
     }
   };
 

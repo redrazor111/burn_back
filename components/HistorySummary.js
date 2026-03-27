@@ -90,8 +90,11 @@ export default function HistorySummary() {
         if (isPro) {
             setShowChart(true);
         } else {
-            setShowPremium(true);
+            setShowChart(true);
         }
+        setTimeout(() => {
+            chartScrollRef.current?.scrollToEnd({ animated: true });
+        }, 300);
     };
 
     useEffect(() => {
@@ -218,7 +221,7 @@ export default function HistorySummary() {
 
             <ScrollView contentContainerStyle={styles.scrollPadding} showsVerticalScrollIndicator={false}>
                 <View style={[styles.searchContainer, styles.searchMargin]}>
-                    <Ionicons name="search" size={16} color="#999" style={styles.searchIcon} />
+                    <Ionicons name="search" size={22} color="#999" style={styles.searchIcon} />
                     <TextInput
                         style={styles.searchInput}
                         placeholder="Search food or activity..."
@@ -227,7 +230,12 @@ export default function HistorySummary() {
                         onChangeText={setSearchQuery}
                     />
                     {searchQuery.length > 0 && (
-                        <TouchableOpacity onPress={() => setSearchQuery('')}><Ionicons name="close-circle" size={16} color="#CCC" /></TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => setSearchQuery('')}
+                            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                        >
+                            <Ionicons name="close-circle" size={22} color="#CCC" />
+                        </TouchableOpacity>
                     )}
                 </View>
 
@@ -299,15 +307,32 @@ export default function HistorySummary() {
                             </View>
 
                             <View style={{ flexDirection: 'row', height: 320, marginTop: 20 }}>
+                                {/* Y-Axis Labels */}
                                 <View style={{ width: 95, height: 260, justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 12 }}>
                                     <Text style={styles.yAxisText}>{targetCalories + (maxVal / 2)}</Text>
-                                    <View style={{ position: 'absolute', top: HALF_HEIGHT - 7 }}><Text style={[styles.yAxisText, { color: '#B8860B', fontWeight: '900' }]}>{targetCalories} cal</Text></View>
+                                    <View style={{ position: 'absolute', top: HALF_HEIGHT - 7 }}>
+                                        <Text style={[styles.yAxisText, { color: '#B8860B', fontWeight: '900' }]}>{targetCalories} cal</Text>
+                                    </View>
                                     <Text style={styles.yAxisText}>{targetCalories - (maxVal / 2)}</Text>
                                 </View>
 
-                                <View style={[styles.chartWrapper, { flex: 1, height: 260 }]}>
-                                    <View style={[styles.targetBaseline, { top: HALF_HEIGHT }]} />
-                                    <ScrollView horizontal ref={chartScrollRef} showsHorizontalScrollIndicator={false} style={{ overflow: 'visible' }} contentContainerStyle={{ paddingHorizontal: 15, alignItems: 'center', height: 260, overflow: 'visible' }}>
+                                {/* Chart Area */}
+                                <View style={[styles.chartWrapper, { flex: 1, height: 260, overflow: 'hidden' }]}>
+                                    <View style={[styles.targetBaseline, { top: HALF_HEIGHT, zIndex: 10 }]} />
+
+                                    <ScrollView
+                                        horizontal
+                                        ref={chartScrollRef}
+                                        showsHorizontalScrollIndicator={false}
+                                        // We move the shaded background INSIDE the scroll view
+                                        contentContainerStyle={{
+                                            paddingHorizontal: 15,
+                                            alignItems: 'center',
+                                            height: 260,
+                                            backgroundColor: '#F9F9F9', // Shaded area moves here
+                                        }}
+                                        onContentSizeChange={() => chartScrollRef.current?.scrollToEnd({ animated: false })}
+                                    >
                                         {sortedDates.slice().reverse().map((dateKey) => {
                                             const data = stats[dateKey] || { intake: 0, burned: 0 };
                                             const balance = targetCalories - (data.intake - data.burned);
@@ -404,8 +429,21 @@ const styles = StyleSheet.create({
     avgLabelCenter: { fontSize: 9, fontWeight: '800', color: '#9E9E9E', marginBottom: 5, textAlign: 'center' },
     avgValueCenter: { fontSize: 18, fontWeight: '900', color: '#1B4D20' },
     avgUnit: { fontSize: 12, fontWeight: '400', color: '#666' },
-    chartWrapper: { backgroundColor: '#F9F9F9', borderRadius: 16, overflow: 'visible' },
-    targetBaseline: { position: 'absolute', left: 0, right: 0, height: 2, backgroundColor: '#B8860B', zIndex: 5 },
+    chartWrapper: {
+        backgroundColor: '#F9F9F9',
+        borderRadius: 16,
+        overflow: 'hidden', // CRITICAL: This clips the bars if they try to go outside
+        borderWidth: 1,
+        borderColor: '#EEE'
+    },
+    targetBaseline: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        height: 2,
+        backgroundColor: '#B8860B',
+        zIndex: 20 // Higher zIndex to stay above bars
+    },
     barColumn: { width: 65, marginHorizontal: 4, alignItems: 'center', overflow: 'visible' },
     barBase: { width: 24, borderRadius: 4 },
     barValueText: { fontSize: 10, fontWeight: '900', textAlign: 'center', width: 60, zIndex: 10 },
