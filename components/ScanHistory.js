@@ -4,7 +4,7 @@ import { useSubscriptionStatus } from '@/utils/subscription';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutAnimation,
   Modal,
@@ -18,7 +18,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Import your components
 import Guide from '../components/Guide';
 import Shop from '../components/Shop';
 import PremiumModal from './PremiumModal';
@@ -27,7 +26,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const BAR_CHART_HEIGHT = 220;
+const BAR_CHART_HEIGHT = 240;
 
 export default function ScanHistory() {
   const insets = useSafeAreaInsets();
@@ -36,6 +35,10 @@ export default function ScanHistory() {
   const [history, setHistory] = useState([]);
   const [expandedSections, setExpandedSections] = useState({});
   const [userId, setUserId] = useState(auth.currentUser?.uid);
+
+  const calScrollRef = useRef(null);
+  const protScrollRef = useRef(null);
+  const carbScrollRef = useRef(null);
 
   const [showChart, setShowChart] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
@@ -60,8 +63,13 @@ export default function ScanHistory() {
   const handleOpenChart = () => {
     if (isPro) {
       setShowChart(true);
+      setTimeout(() => {
+        calScrollRef.current?.scrollToEnd({ animated: false });
+        protScrollRef.current?.scrollToEnd({ animated: false });
+        carbScrollRef.current?.scrollToEnd({ animated: false });
+      }, 500);
     } else {
-      setShowChart(true);
+      setShowPremium(true);
     }
   };
 
@@ -136,55 +144,59 @@ export default function ScanHistory() {
     return `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
   };
 
-  const CustomBarChart = ({ type, dataKey, maxVal, color }) => {
-    const sortedDates = Object.keys(groupedData).sort((a, b) => a.localeCompare(b));
-    const isNorthAmerica = new Intl.DateTimeFormat().resolvedOptions().timeZone.includes('America');
+  const sortedDates = useMemo(() =>
+    Object.keys(groupedData).sort((a, b) => a.localeCompare(b)),
+    [groupedData]
+  );
 
-    return (
-      <View style={styles.comparisonCard}>
-        <View style={styles.comparisonHeader}>
-          <Text style={styles.comparisonTitle}>{type} History</Text>
-        </View>
-        {/* Increased total height to 280 to prevent clipping labels */}
-        <View style={{ flexDirection: 'row', height: BAR_CHART_HEIGHT + 60, marginTop: 10 }}>
-          <View style={styles.yAxisContainer}>
-            <Text style={styles.yAxisText}>{maxVal}</Text>
-            <Text style={styles.yAxisText}>{Math.round(maxVal / 2)}</Text>
-            <Text style={styles.yAxisText}>0</Text>
-          </View>
-          <View style={[styles.chartWrapper, { flex: 1, height: BAR_CHART_HEIGHT }]}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.barScrollContent}
-              style={{ overflow: 'visible' }}
-            >
-              {sortedDates.map((key) => {
-                const val = groupedData[key][dataKey];
-                const barHeight = (val / maxVal) * BAR_CHART_HEIGHT;
-                const parts = key.split('/');
-                const displayDate = isNorthAmerica
-                  ? `${parts[1]}/${parts[2]}`
-                  : `${parts[2]}/${parts[1]}`;
-
-                return (
-                  <View key={key} style={styles.barColumn}>
-                    {val > 0 && (
-                      <Text style={[styles.barValueText, { color }]}>
-                        {Math.round(val)}
-                      </Text>
-                    )}
-                    <View style={[styles.barBase, { height: Math.max(barHeight, 4), backgroundColor: color }]} />
-                    <Text style={styles.barDateTextAbsolute}>{displayDate}</Text>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
+  const CustomBarChart = ({ type, dataKey, maxVal, color, scrollRef }) => (
+    <View style={styles.comparisonCard}>
+      <View style={styles.comparisonHeader}>
+        <Text style={styles.comparisonTitle}>{type} History</Text>
       </View>
-    );
-  };
+
+      <View style={{ marginTop: 10 }}>
+        <View style={[styles.chartWrapper, { height: 280 }]}>
+          <ScrollView
+            horizontal
+            ref={scrollRef}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingHorizontal: 15,
+              alignItems: 'flex-end',
+              height: 280,
+              backgroundColor: '#F9F9F9',
+            }}
+            onContentSizeChange={() => scrollRef?.current?.scrollToEnd({ animated: false })}
+            onLayout={() => scrollRef?.current?.scrollToEnd({ animated: false })}
+          >
+            {sortedDates.map((key) => {
+              const val = groupedData[key][dataKey];
+              const barHeight = Math.min(
+                (val / maxVal) * BAR_CHART_HEIGHT,
+                BAR_CHART_HEIGHT - 2
+              );
+              const parts = key.split('/');
+              const dDate = `${parts[2]}/${parts[1]}`;
+
+              return (
+                <View key={key} style={styles.barColumn}>
+                  {val > 0 && (
+                    <Text style={[styles.barValueText, { color }]}>
+                      {Math.round(val)}
+                    </Text>
+                  )}
+                  <View style={[styles.barBase, { height: Math.max(barHeight, 4), backgroundColor: color }]} />
+                  <Text style={styles.barDateLabel}>{dDate}</Text>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+        <Text style={styles.chartHint}>Daily {type.toLowerCase()} summary</Text>
+      </View>
+    </View>
+  );
 
   return (
     <View style={styles.fullScreen}>
@@ -209,7 +221,9 @@ export default function ScanHistory() {
             <Text style={styles.todayLabel}>TODAY'S INTAKE</Text>
             <Text style={styles.todayValue}>{averages.today.toLocaleString()} <Text style={styles.todayUnit}>cal</Text></Text>
           </View>
-          <View style={styles.burnIconBg}><MaterialCommunityIcons name="silverware-fork-knife" size={32} color="#FF9800" /></View>
+          <View style={styles.burnIconBg}>
+            <MaterialCommunityIcons name="silverware-fork-knife" size={32} color="#FF9800" />
+          </View>
         </View>
       </View>
 
@@ -227,12 +241,16 @@ export default function ScanHistory() {
               <View style={styles.itemsContainer}>
                 {groupedData[dateKey].items.map((item) => (
                   <View key={item.id} style={styles.historyCard}>
-                    <View style={styles.historyIconBg}><MaterialCommunityIcons name="food" size={26} color="#1B4D20" /></View>
+                    <View style={styles.historyIconBg}>
+                      <MaterialCommunityIcons name="food-apple" size={26} color="#1B4D20" />
+                    </View>
                     <View style={styles.historyDetails}>
                       <Text style={styles.historyFoodName}>{item.identifiedProduct || 'Meal'}</Text>
-                      <Text style={styles.historyMacroSub}>{item.protein}g Prot • {item.carbs}g Carb</Text>
+                      <Text style={styles.historyMacroSub}>Prot {item.protein}g • Carb {item.carbs}g</Text>
                     </View>
-                    <View style={styles.valueBadge}><Text style={styles.valueText}>{item.calories} cal</Text></View>
+                    <View style={styles.valueBadge}>
+                      <Text style={styles.valueText}>{item.calories} cal</Text>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -246,10 +264,14 @@ export default function ScanHistory() {
         <View style={styles.modalContainer}>
           <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
             <Text style={styles.modalTitle}>Shop at Amazon</Text>
-            <TouchableOpacity onPress={() => setShowShop(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowShop(false)}>
+              <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
+            </TouchableOpacity>
           </View>
           <View style={{ flex: 1 }}><Shop /></View>
-          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowShop(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
+          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowShop(false)}>
+            <Text style={styles.bottomCloseBtnText}>Close</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
 
@@ -258,10 +280,14 @@ export default function ScanHistory() {
         <View style={styles.modalContainer}>
           <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
             <Text style={styles.modalTitle}>Health Guide</Text>
-            <TouchableOpacity onPress={() => setShowGuide(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowGuide(false)}>
+              <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
+            </TouchableOpacity>
           </View>
           <View style={{ flex: 1 }}><Guide /></View>
-          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowGuide(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
+          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowGuide(false)}>
+            <Text style={styles.bottomCloseBtnText}>Close</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
 
@@ -270,7 +296,9 @@ export default function ScanHistory() {
         <View style={styles.modalContainer}>
           <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
             <Text style={styles.modalTitle}>Nutrient Trends</Text>
-            <TouchableOpacity onPress={() => setShowChart(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowChart(false)}>
+              <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
+            </TouchableOpacity>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 50 }}>
@@ -280,12 +308,10 @@ export default function ScanHistory() {
                   <Text style={styles.avgLabelCenter}>AVG CAL</Text>
                   <Text style={styles.avgValueCenter}>{averages.dailyAvg}<Text style={styles.avgUnit}>cal</Text></Text>
                 </View>
-
                 <View style={[styles.avgBoxSmall, { marginLeft: 8, backgroundColor: '#F1F8E9' }]}>
                   <Text style={styles.avgLabelCenter}>AVG PROT</Text>
                   <Text style={styles.avgValueCenter}>{averages.protAvg}<Text style={styles.avgUnit}>g</Text></Text>
                 </View>
-
                 <View style={[styles.avgBoxSmall, { marginLeft: 8, backgroundColor: '#F9FBE7' }]}>
                   <Text style={styles.avgLabelCenter}>AVG CARBS</Text>
                   <Text style={styles.avgValueCenter}>{averages.carbAvg}<Text style={styles.avgUnit}>g</Text></Text>
@@ -293,11 +319,14 @@ export default function ScanHistory() {
               </View>
             </View>
 
-            <CustomBarChart type="Calories" dataKey="totalCalories" maxVal={chartMaxes.cal} color="#1B4D20" />
-            <CustomBarChart type="Protein" dataKey="totalProtein" maxVal={chartMaxes.prot} color="#2E7D32" />
-            <CustomBarChart type="Carbs" dataKey="totalCarbs" maxVal={chartMaxes.carb} color="#4CAF50" />
+            <CustomBarChart type="Calories" dataKey="totalCalories" maxVal={chartMaxes.cal} color="#1B4D20" scrollRef={calScrollRef} />
+            <CustomBarChart type="Protein" dataKey="totalProtein" maxVal={chartMaxes.prot} color="#2E7D32" scrollRef={protScrollRef} />
+            <CustomBarChart type="Carbs" dataKey="totalCarbs" maxVal={chartMaxes.carb} color="#4CAF50" scrollRef={carbScrollRef} />
           </ScrollView>
-          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
+
+          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}>
+            <Text style={styles.bottomCloseBtnText}>Close</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
 
@@ -335,73 +364,22 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: '#FFF' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   modalTitle: { fontSize: 24, fontWeight: '900', color: '#1B4D20' },
-  averagesContainer: {
-    flexDirection: 'column',
-    marginBottom: 15,
-    marginTop: 5
-  },
-  avgBoxSmall: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-    paddingVertical: 12, // Reduced vertical padding
-    paddingHorizontal: 4, // Minimal horizontal padding
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  avgLabelCenter: {
-    fontSize: 8, // Slightly smaller to prevent text wrapping
-    fontWeight: '800',
-    color: '#9E9E9E',
-    marginBottom: 3
-  },
-  avgValueCenter: {
-    fontSize: 16, // Slightly smaller to fit 3-wide
-    fontWeight: '900',
-    color: '#1B4D20'
-  },
+  averagesContainer: { flexDirection: 'column', marginBottom: 15, marginTop: 5 },
+  avgBoxSmall: { flex: 1, backgroundColor: '#F8F9FA', paddingVertical: 12, paddingHorizontal: 4, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  avgLabelCenter: { fontSize: 8, fontWeight: '800', color: '#9E9E9E', marginBottom: 3 },
+  avgValueCenter: { fontSize: 16, fontWeight: '900', color: '#1B4D20' },
   avgUnit: { fontSize: 12, fontWeight: '400', color: '#666' },
+  comparisonCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 12, paddingBottom: 20, marginVertical: 10, borderWidth: 1, borderColor: '#EEE', elevation: 3 },
+  comparisonHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   comparisonTitle: { fontSize: 16, fontWeight: '800', color: '#212529' },
+  chartWrapper: { backgroundColor: '#F9F9F9', borderRadius: 16, overflow: 'hidden' },
+  barColumn: { width: 52, marginHorizontal: 3, alignItems: 'center', justifyContent: 'flex-end', height: 280 },
+  barBase: { width: 20, borderTopLeftRadius: 4, borderTopRightRadius: 4 },
+  barValueText: { fontSize: 9, fontWeight: '900', textAlign: 'center', width: 50, marginBottom: 2 },
+  barDateLabel: { fontSize: 9, color: '#999', fontWeight: '700', textAlign: 'center', marginTop: 4, width: 52 },
+  chartHint: { textAlign: 'center', fontSize: 11, color: '#AAA', fontWeight: '600', marginTop: 8, marginBottom: 4 },
   yAxisText: { fontSize: 9, color: '#999', fontWeight: '700' },
-  barBase: { width: 22, borderTopLeftRadius: 6, borderTopRightRadius: 6 },
-  barValueText: { fontSize: 9, fontWeight: '900', textAlign: 'center', width: 60, marginBottom: 4 },
-  barDateTextAbsolute: { position: 'absolute', bottom: -28, fontSize: 8, color: '#999', fontWeight: '700', width: 50, textAlign: 'center' },
   bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
   bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
-  comparisonCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 24,
-    padding: 20,
-    paddingBottom: 50, // Added more padding for the dates
-    marginVertical: 10,
-    borderWidth: 1,
-    borderColor: '#EEE'
-  },
-  yAxisContainer: {
-    width: 40,
-    height: BAR_CHART_HEIGHT,
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    paddingRight: 8,
-    paddingBottom: 2 // Tiny offset to align with the bottom of the bars
-  },
-  chartWrapper: {
-    backgroundColor: '#F9F9F9',
-    borderRadius: 16,
-    overflow: 'visible' // Important: allows labels to hang below
-  },
-  barScrollContent: {
-    paddingHorizontal: 15,
-    alignItems: 'flex-end',
-    height: BAR_CHART_HEIGHT,
-    overflow: 'visible'
-  },
-  barColumn: {
-    width: 60,
-    marginHorizontal: 5,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    height: BAR_CHART_HEIGHT,
-    overflow: 'visible'
-  },
+  itemsContainer: { marginTop: 5 },
 });

@@ -233,6 +233,12 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   useEffect(() => {
+    if (!isProfileLoading && targetCalories === 0) {
+      setIsEditingTarget(true);
+    }
+  }, [targetCalories, isProfileLoading]);
+
+  useEffect(() => {
     const init = async () => {
       const uid = await silentSignIn();
       if (uid) {
@@ -1225,6 +1231,13 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               {targetCalories === 0 ? "Welcome! Setup Profile" : "Edit Profile"}
             </Text>
 
+            {/* Add a welcome message for new users */}
+            {targetCalories === 0 && (
+              <Text style={{ fontSize: 12, color: '#666', textAlign: 'center', marginBottom: 15, lineHeight: 18 }}>
+                Before you get started, set your daily calorie goal and profile so we can personalise your experience.
+              </Text>
+            )}
+
             <View style={styles.inputGroup}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
                 <Text style={styles.inputLabel}>Daily Calorie Goal</Text>
@@ -1277,7 +1290,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
             <View style={styles.editActions}>
               {targetCalories !== 0 && (
-                <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsEditingTarget(false)}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.cancelBtn]}
+                  onPress={() => setIsEditingTarget(false)}
+                >
                   <Text>Cancel</Text>
                 </TouchableOpacity>
               )}

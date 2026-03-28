@@ -65,11 +65,14 @@ export default function ActivityHistory() {
     return () => { actsUnsub(); };
   }, [userId]);
 
-    const handleOpenChart = () => {
+  const handleOpenChart = () => {
     if (isPro) {
       setShowChart(true);
+      setTimeout(() => {
+        chartScrollRef.current?.scrollToEnd({ animated: false });
+      }, 500);
     } else {
-      setShowChart(true);
+      setShowPremium(true);
     }
   };
 
@@ -98,23 +101,23 @@ export default function ActivityHistory() {
     const oneYearAgo = new Date(); oneYearAgo.setDate(now.getDate() - 365);
 
     const getAvgBurn = (sinceDate) => {
-        const relevantDays = Object.keys(groupedData).filter(key => {
-            const dayDate = new Date(key.replace(/\//g, '-'));
-            return dayDate >= sinceDate;
-        });
-        if (relevantDays.length === 0) return 0;
-        const total = relevantDays.reduce((sum, key) => sum + groupedData[key].totalBurned, 0);
-        return Math.round(total / relevantDays.length);
+      const relevantDays = Object.keys(groupedData).filter(key => {
+        const dayDate = new Date(key.replace(/\//g, '-'));
+        return dayDate >= sinceDate;
+      });
+      if (relevantDays.length === 0) return 0;
+      const total = relevantDays.reduce((sum, key) => sum + groupedData[key].totalBurned, 0);
+      return Math.round(total / relevantDays.length);
     };
 
     const todayKey = getSafeDateKey(new Date().toISOString());
     const todayBurned = groupedData[todayKey]?.totalBurned || 0;
 
     return {
-        today: todayBurned,
-        weekly: getAvgBurn(oneWeekAgo),
-        monthly: getAvgBurn(oneMonthAgo),
-        yearly: getAvgBurn(oneYearAgo)
+      today: todayBurned,
+      weekly: getAvgBurn(oneWeekAgo),
+      monthly: getAvgBurn(oneMonthAgo),
+      yearly: getAvgBurn(oneYearAgo)
     };
   }, [groupedData]);
 
@@ -168,29 +171,29 @@ export default function ActivityHistory() {
 
       <ScrollView contentContainerStyle={styles.scrollContentList} showsVerticalScrollIndicator={false}>
         {Object.keys(groupedData).sort((a, b) => b.localeCompare(a)).map((dateKey) => (
-            <View key={dateKey} style={styles.sectionContainer}>
-                <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(dateKey)} activeOpacity={0.7}>
-                    <View style={styles.sectionHeaderTextGroup}>
-                        <Text style={styles.sectionLabel}>{getFullReadableDate(dateKey).toUpperCase()}</Text>
-                        <Text style={styles.sectionTotalValue}>{groupedData[dateKey].totalBurned.toLocaleString()} cal</Text>
+          <View key={dateKey} style={styles.sectionContainer}>
+            <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(dateKey)} activeOpacity={0.7}>
+              <View style={styles.sectionHeaderTextGroup}>
+                <Text style={styles.sectionLabel}>{getFullReadableDate(dateKey).toUpperCase()}</Text>
+                <Text style={styles.sectionTotalValue}>{groupedData[dateKey].totalBurned.toLocaleString()} cal</Text>
+              </View>
+              <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#9E9E9E" />
+            </TouchableOpacity>
+            {expandedSections[dateKey] && (
+              <View style={styles.itemsContainer}>
+                {groupedData[dateKey].items.map((item) => (
+                  <View key={item.id} style={styles.historyCard}>
+                    <View style={styles.historyIconBg}><MaterialCommunityIcons name={item.icon || "run"} size={26} color="#1B4D20" /></View>
+                    <View style={styles.historyDetails}>
+                      <Text style={styles.historyTime}>{item.type || 'Activity'}</Text>
+                      <Text style={styles.historyActivityName}>{item.duration ? `${item.duration} mins` : 'Active Session'}</Text>
                     </View>
-                    <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#9E9E9E" />
-                </TouchableOpacity>
-                {expandedSections[dateKey] && (
-                    <View style={styles.itemsContainer}>
-                        {groupedData[dateKey].items.map((item) => (
-                            <View key={item.id} style={styles.historyCard}>
-                                <View style={styles.historyIconBg}><MaterialCommunityIcons name={item.icon || "run"} size={26} color="#1B4D20" /></View>
-                                <View style={styles.historyDetails}>
-                                    <Text style={styles.historyTime}>{item.type || 'Activity'}</Text>
-                                    <Text style={styles.historyActivityName}>{item.duration ? `${item.duration} mins` : 'Active Session'}</Text>
-                                </View>
-                                <View style={styles.valueBadge}><Text style={styles.valueText}>{item.caloriesBurned || 0} cal</Text></View>
-                            </View>
-                        ))}
-                    </View>
-                )}
-            </View>
+                    <View style={styles.valueBadge}><Text style={styles.valueText}>{item.caloriesBurned || 0} cal</Text></View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
         ))}
       </ScrollView>
 
@@ -238,6 +241,7 @@ export default function ActivityHistory() {
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 50 }}>
+
             {/* 4-BOX SUMMARY GRID */}
             <View style={styles.averagesContainer}>
               <View style={{ flexDirection: 'row', marginBottom: 10 }}>
@@ -250,7 +254,6 @@ export default function ActivityHistory() {
                   <Text style={styles.avgValueCenter}>{averages.weekly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
                 </View>
               </View>
-
               <View style={{ flexDirection: 'row' }}>
                 <View style={styles.avgBoxSmall}>
                   <Text style={styles.avgLabelCenter}>DAILY AVG (MONTH)</Text>
@@ -264,48 +267,61 @@ export default function ActivityHistory() {
             </View>
 
             <View style={styles.comparisonCard}>
-              <View style={styles.comparisonHeader}><Text style={styles.comparisonTitle}>Daily Activity History</Text></View>
+              <View style={styles.comparisonHeader}>
+                <Text style={styles.comparisonTitle}>Daily Activity History</Text>
+              </View>
 
-              <View style={{ flexDirection: 'row', height: 320, marginTop: 20 }}>
-                <View style={{ width: 85, height: 260, justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 12 }}>
-                  <Text style={styles.yAxisText}>{maxVal}</Text>
-                  <Text style={styles.yAxisText}>{Math.round(maxVal / 2)}</Text>
-                  <Text style={styles.yAxisText}>0</Text>
-                </View>
-
-                <View style={[styles.chartWrapper, { flex: 1, height: 260 }]}>
+              <View style={{ marginTop: 20 }}>
+                <View style={[styles.chartWrapper, { height: 280 }]}>
                   <ScrollView
                     horizontal
                     ref={chartScrollRef}
                     showsHorizontalScrollIndicator={false}
-                    style={{ overflow: 'visible' }}
-                    contentContainerStyle={{ paddingHorizontal: 15, alignItems: 'flex-end', height: 260, overflow: 'visible' }}
+                    contentContainerStyle={{
+                      paddingHorizontal: 15,
+                      alignItems: 'flex-end',
+                      height: 280,
+                      backgroundColor: '#F9F9F9',
+                    }}
+                    onContentSizeChange={() => chartScrollRef.current?.scrollToEnd({ animated: false })}
+                    onLayout={() => chartScrollRef.current?.scrollToEnd({ animated: false })}
                   >
                     {sortedDates.map((dateKey) => {
                       const dayBurn = groupedData[dateKey].totalBurned;
-                      const barHeight = (dayBurn / maxVal) * 260;
+                      const barHeight = Math.min(
+                        (dayBurn / maxVal) * 240,
+                        238
+                      );
 
                       const parts = dateKey.split('/');
-                      const isNorthAmerica = new Intl.DateTimeFormat().resolvedOptions().timeZone.includes('America');
-                      const displayDate = isNorthAmerica
-                        ? `${parts[1]}/${parts[2]}`
-                        : `${parts[2]}/${parts[1]}`;
+                      const dDate = `${parts[2]}/${parts[1]}`;
 
                       return (
                         <View key={dateKey} style={styles.barColumn}>
-                          {dayBurn > 0 && <Text style={styles.barValueText}>+{Math.round(dayBurn)}</Text>}
+                          {dayBurn > 0 && (
+                            <Text style={styles.barValueText}>
+                              {Math.round(dayBurn)}
+                            </Text>
+                          )}
                           <View style={[styles.barBase, { height: Math.max(barHeight, 4) }]} />
-                          <Text style={styles.barDateTextAbsolute}>{displayDate}</Text>
+                          <Text style={styles.barDateLabel}>{dDate}</Text>
                         </View>
                       );
                     })}
                   </ScrollView>
                 </View>
+
+                <Text style={styles.chartHint}>Daily calorie burn summary</Text>
               </View>
-              <Text style={styles.chartHint}>Daily calorie burn summary</Text>
             </View>
           </ScrollView>
-          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]}
+            onPress={() => setShowChart(false)}
+          >
+            <Text style={styles.bottomCloseBtnText}>Close</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
 
@@ -345,7 +361,6 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: '#FFF' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   modalTitle: { fontSize: 24, fontWeight: '900', color: '#1B4D20' },
-  comparisonCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 20, paddingBottom: 45, marginVertical: 10, borderWidth: 1, borderColor: '#EEE', elevation: 3 },
   comparisonHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   comparisonTitle: { fontSize: 16, fontWeight: '800', color: '#212529' },
   averagesContainer: { flexDirection: 'column', marginBottom: 20, marginTop: 5 },
@@ -353,13 +368,60 @@ const styles = StyleSheet.create({
   avgLabelCenter: { fontSize: 9, fontWeight: '800', color: '#9E9E9E', marginBottom: 5 },
   avgValueCenter: { fontSize: 18, fontWeight: '900', color: '#1B4D20' },
   avgUnit: { fontSize: 12, fontWeight: '400', color: '#666' },
-  chartWrapper: { backgroundColor: '#F9F9F9', borderRadius: 16, overflow: 'visible' },
-  barColumn: { width: 65, marginHorizontal: 4, alignItems: 'center', justifyContent: 'flex-end', height: 260, overflow: 'visible' },
-  barBase: { width: 26, borderTopLeftRadius: 6, borderTopRightRadius: 6, backgroundColor: '#1B4D20' },
-  barValueText: { fontSize: 10, fontWeight: '900', textAlign: 'center', width: 60, zIndex: 10, color: '#1B4D20', marginBottom: 4 },
+  chartWrapper: {
+    backgroundColor: '#F9F9F9',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  barColumn: {
+    width: 52,
+    marginHorizontal: 3,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: 280,
+  },
+  barBase: {
+    width: 20,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    backgroundColor: '#1B4D20',
+  },
+  barValueText: {
+    fontSize: 9,
+    fontWeight: '900',
+    textAlign: 'center',
+    width: 50,
+    color: '#1B4D20',
+    marginBottom: 2,
+  },
+  barDateLabel: {
+    fontSize: 9,
+    color: '#999',
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 4,
+    width: 52,
+  },
+  chartHint: {
+    textAlign: 'center',
+    fontSize: 11,
+    color: '#AAA',
+    fontWeight: '600',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  comparisonCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 24,
+    padding: 12,
+    paddingBottom: 20,
+    marginVertical: 10,
+    borderWidth: 1,
+    borderColor: '#EEE',
+    elevation: 3,
+  },
   barDateTextAbsolute: { position: 'absolute', bottom: -28, fontSize: 8, color: '#999', fontWeight: '700', width: 50, textAlign: 'center' },
   yAxisText: { fontSize: 9, color: '#999', fontWeight: '700' },
-  chartHint: { textAlign: 'center', fontSize: 11, color: '#AAA', fontWeight: '600', marginTop: 45 },
   bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
   bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   placeholderContainer: { alignItems: 'center', marginTop: 100 },

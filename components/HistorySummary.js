@@ -89,12 +89,12 @@ export default function HistorySummary() {
     const handleOpenChart = () => {
         if (isPro) {
             setShowChart(true);
+            setTimeout(() => {
+                chartScrollRef.current?.scrollToEnd({ animated: false });
+            }, 500);
         } else {
-            setShowChart(true);
+            setShowPremium(true);
         }
-        setTimeout(() => {
-            chartScrollRef.current?.scrollToEnd({ animated: true });
-        }, 300);
     };
 
     useEffect(() => {
@@ -211,7 +211,7 @@ export default function HistorySummary() {
                     <View>
                         <Text style={styles.todayLabel}>TODAY'S REMAINING</Text>
                         <Text style={styles.todayValue}>{todayStats.remaining} <Text style={styles.todayUnit}>cal</Text></Text>
-                        <Text style={styles.goalText}>DAILY GOAL: {targetCalories}</Text>
+                        <Text style={styles.goalText}>DAILY GOAL: {targetCalories} cal</Text>
                     </View>
                     <View style={styles.fireIconBg}>
                         <MaterialCommunityIcons name="fire" size={32} color="#FF9800" />
@@ -265,12 +265,12 @@ export default function HistorySummary() {
                                     <Text style={styles.mathOperator}>-</Text>
                                     <View style={styles.mathItem}><Text style={styles.mathLabel}>In</Text><Text style={styles.mathValue}>{data.intake}</Text></View>
                                     <Text style={styles.mathOperator}>=</Text>
-                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Balance</Text><Text style={[styles.mathValue, { color: isDeficit ? '#1B4D20' : '#C62828' }]}>{Math.abs(netRemaining)}</Text></View>
+                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Balance</Text><Text style={[styles.mathValue, { color: isDeficit ? '#1B4D20' : '#C62828' }]}>{Math.abs(netRemaining)} cal</Text></View>
                                 </View>
                                 {(expandedSections[dateKey] || searchQuery) && (
                                     <View style={styles.detailsList}>
-                                        {data.rawMeals.map(m => (<View key={m.id} style={styles.detailRow}><Text style={styles.detailName}>{m.productName || m.identifiedProduct}</Text><Text style={styles.detailValue}>-{m.calories}</Text></View>))}
-                                        {data.rawActs.map(a => (<View key={a.id} style={styles.detailRow}><Text style={[styles.detailName, { color: '#1B4D20' }]}>{a.type || 'Exercise'}</Text><Text style={[styles.detailValue, { color: '#1B4D20' }]}>+{a.caloriesBurned}</Text></View>))}
+                                        {data.rawMeals.map(m => (<View key={m.id} style={styles.detailRow}><Text style={styles.detailName}>{m.productName || m.identifiedProduct}</Text><Text style={styles.detailValue}>-{m.calories} cal</Text></View>))}
+                                        {data.rawActs.map(a => (<View key={a.id} style={styles.detailRow}><Text style={[styles.detailName, { color: '#1B4D20' }]}>{a.type || 'Exercise'}</Text><Text style={[styles.detailValue, { color: '#1B4D20' }]}>+{a.caloriesBurned} cal</Text></View>))}
                                     </View>
                                 )}
                             </TouchableOpacity>
@@ -283,18 +283,32 @@ export default function HistorySummary() {
                 <View style={styles.modalContainer}>
                     <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
                         <Text style={styles.modalTitle}>Balance Trends</Text>
-                        <TouchableOpacity onPress={() => setShowChart(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity>
+                        <TouchableOpacity onPress={() => setShowChart(false)}>
+                            <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
+                        </TouchableOpacity>
                     </View>
 
                     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 50 }}>
                         <View style={styles.averagesContainer}>
                             <View style={{ flexDirection: 'row', marginBottom: 10 }}>
-                                <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9' }]}><Text style={styles.avgLabelCenter}>TODAY</Text><Text style={styles.avgValueCenter}>{averages.today.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text></View>
-                                <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}><Text style={styles.avgLabelCenter}>DAILY AVG (WEEK)</Text><Text style={styles.avgValueCenter}>{averages.weekly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text></View>
+                                <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9' }]}>
+                                    <Text style={styles.avgLabelCenter}>TODAY</Text>
+                                    <Text style={styles.avgValueCenter}>{averages.today.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                                </View>
+                                <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
+                                    <Text style={styles.avgLabelCenter}>DAILY AVG (WEEK)</Text>
+                                    <Text style={styles.avgValueCenter}>{averages.weekly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                                </View>
                             </View>
                             <View style={{ flexDirection: 'row', marginBottom: 10 }}>
-                                <View style={styles.avgBoxSmall}><Text style={styles.avgLabelCenter}>DAILY AVG (MONTH)</Text><Text style={styles.avgValueCenter}>{averages.monthly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text></View>
-                                <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9' }]}><Text style={styles.avgLabelCenter}>DAILY AVG (YEAR)</Text><Text style={styles.avgValueCenter}>{averages.yearly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text></View>
+                                <View style={styles.avgBoxSmall}>
+                                    <Text style={styles.avgLabelCenter}>DAILY AVG (MONTH)</Text>
+                                    <Text style={styles.avgValueCenter}>{averages.monthly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                                </View>
+                                <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9' }]}>
+                                    <Text style={styles.avgLabelCenter}>DAILY AVG (YEAR)</Text>
+                                    <Text style={styles.avgValueCenter}>{averages.yearly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                                </View>
                             </View>
                         </View>
 
@@ -306,30 +320,23 @@ export default function HistorySummary() {
                                 </View>
                             </View>
 
-                            <View style={{ flexDirection: 'row', height: 320, marginTop: 20 }}>
-                                {/* Y-Axis Labels */}
-                                <View style={{ width: 95, height: 260, justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 12 }}>
-                                    <Text style={styles.yAxisText}>{targetCalories + (maxVal / 2)}</Text>
-                                    <View style={{ position: 'absolute', top: HALF_HEIGHT - 7 }}>
-                                        <Text style={[styles.yAxisText, { color: '#B8860B', fontWeight: '900' }]}>{targetCalories} cal</Text>
+                            <View style={{ marginTop: 20 }}>
+                                <View style={[styles.chartWrapper, { height: 280 }]}>
+
+                                    {/* Goal Line */}
+                                    <View style={[styles.targetBaseline, { top: 130 }]} />
+                                    <View style={{ position: 'absolute', top: 120, left: 8, zIndex: 25 }}>
+                                        <Text style={{ fontSize: 8, color: '#B8860B', fontWeight: '900', letterSpacing: 0.5 }}>GOAL</Text>
                                     </View>
-                                    <Text style={styles.yAxisText}>{targetCalories - (maxVal / 2)}</Text>
-                                </View>
-
-                                {/* Chart Area */}
-                                <View style={[styles.chartWrapper, { flex: 1, height: 260, overflow: 'hidden' }]}>
-                                    <View style={[styles.targetBaseline, { top: HALF_HEIGHT, zIndex: 10 }]} />
-
                                     <ScrollView
                                         horizontal
                                         ref={chartScrollRef}
                                         showsHorizontalScrollIndicator={false}
-                                        // We move the shaded background INSIDE the scroll view
                                         contentContainerStyle={{
                                             paddingHorizontal: 15,
                                             alignItems: 'center',
-                                            height: 260,
-                                            backgroundColor: '#F9F9F9', // Shaded area moves here
+                                            height: 280,
+                                            backgroundColor: '#F9F9F9',
                                         }}
                                         onContentSizeChange={() => chartScrollRef.current?.scrollToEnd({ animated: false })}
                                     >
@@ -337,41 +344,60 @@ export default function HistorySummary() {
                                             const data = stats[dateKey] || { intake: 0, burned: 0 };
                                             const balance = targetCalories - (data.intake - data.burned);
                                             const isOver = balance < 0;
-                                            const barHeight = (Math.abs(balance) / (maxVal / 2)) * HALF_HEIGHT;
+                                            const barHeight = Math.min(
+                                                (Math.abs(balance) / (maxVal / 2)) * HALF_HEIGHT,
+                                                HALF_HEIGHT - 2
+                                            );
 
                                             const parts = dateKey.split('-');
-                                            const isNA = new Intl.DateTimeFormat().resolvedOptions().timeZone.includes('America');
-                                            const dDate = isNA ? `${parts[1]}/${parts[2]}` : `${parts[2]}/${parts[1]}`;
+                                            const dDate = `${parts[2]}/${parts[1]}`;
 
                                             return (
-                                                <View key={dateKey} style={[styles.barColumn, { height: 260 }]}>
+                                                <View key={dateKey} style={styles.barColumn}>
+
+                                                    {/* Upper half — under goal (green bar grows upward) */}
                                                     <View style={styles.chartHalfUnder}>
                                                         {!isOver && balance !== 0 && (
                                                             <>
-                                                                <Text style={[styles.barValueText, { color: '#2E7D32', marginBottom: 4 }]}>+{Math.round(balance)}</Text>
+                                                                <Text style={[styles.barValueText, { color: '#2E7D32', marginBottom: 2 }]}>
+                                                                    +{Math.round(balance)}
+                                                                </Text>
                                                                 <View style={[styles.barBase, { height: barHeight, backgroundColor: '#4CAF50' }]} />
                                                             </>
                                                         )}
                                                     </View>
+
+                                                    {/* Lower half — over goal (red bar grows downward) */}
                                                     <View style={styles.chartHalfOver}>
                                                         {isOver && (
                                                             <>
                                                                 <View style={[styles.barBase, { height: barHeight, backgroundColor: '#FF5252' }]} />
-                                                                <Text style={[styles.barValueText, { color: '#C62828', marginTop: 4 }]}>{Math.round(balance)}</Text>
+                                                                <Text style={[styles.barValueText, { color: '#C62828', marginTop: 2 }]}>
+                                                                    {Math.round(balance)}
+                                                                </Text>
                                                             </>
                                                         )}
                                                     </View>
-                                                    <Text style={styles.barDateTextAbsolute}>{dDate}</Text>
+
+                                                    {/* Date label */}
+                                                    <Text style={styles.barDateLabel}>{dDate}</Text>
                                                 </View>
                                             );
                                         })}
                                     </ScrollView>
                                 </View>
+
+                                <Text style={styles.chartHint}>Daily calorie balance trend</Text>
                             </View>
-                            <Text style={styles.chartHint}>Daily calorie trend summary</Text>
                         </View>
                     </ScrollView>
-                    <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]}
+                        onPress={() => setShowChart(false)}
+                    >
+                        <Text style={styles.bottomCloseBtnText}>Close</Text>
+                    </TouchableOpacity>
                 </View>
             </Modal>
 
@@ -422,7 +448,6 @@ const styles = StyleSheet.create({
     modalTitle: { fontSize: 24, fontWeight: '900', color: '#1B4D20' },
     bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
     bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
-    comparisonCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 20, paddingBottom: 45, marginVertical: 10, borderWidth: 1, borderColor: '#EEE', elevation: 3 },
     comparisonTitle: { fontSize: 16, fontWeight: '900', color: '#1B4D20' },
     averagesContainer: { flexDirection: 'column', marginBottom: 20, marginTop: 5 },
     avgBoxSmall: { flex: 1, backgroundColor: '#F8F9FA', padding: 15, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
@@ -442,14 +467,74 @@ const styles = StyleSheet.create({
         right: 0,
         height: 2,
         backgroundColor: '#B8860B',
-        zIndex: 20 // Higher zIndex to stay above bars
+        zIndex: 20,
+        elevation: 20, // Android needs this too
     },
-    barColumn: { width: 65, marginHorizontal: 4, alignItems: 'center', overflow: 'visible' },
-    barBase: { width: 24, borderRadius: 4 },
-    barValueText: { fontSize: 10, fontWeight: '900', textAlign: 'center', width: 60, zIndex: 10 },
-    barDateTextAbsolute: { position: 'absolute', bottom: -28, fontSize: 9, color: '#999', fontWeight: '700', width: 50, textAlign: 'center' },
-    chartHalfUnder: { height: HALF_HEIGHT, justifyContent: 'flex-end', alignItems: 'center', width: '100%' },
-    chartHalfOver: { height: HALF_HEIGHT, justifyContent: 'flex-start', alignItems: 'center', width: '100%' },
-    yAxisText: { fontSize: 9, color: '#999', fontWeight: '700' },
-    chartHint: { textAlign: 'center', fontSize: 11, color: '#AAA', fontWeight: '600', marginTop: 45 }
+    barColumn: {
+        width: 52,
+        marginHorizontal: 3,
+        alignItems: 'center',
+        height: 280,
+    },
+    comparisonCard: {
+        backgroundColor: '#FFF',
+        borderRadius: 24,
+        padding: 12,
+        paddingBottom: 45,
+        marginVertical: 10,
+        borderWidth: 1,
+        borderColor: '#EEE',
+        elevation: 3,
+    },
+    chartHint: {
+        textAlign: 'center',
+        fontSize: 11,
+        color: '#AAA',
+        fontWeight: '600',
+        marginTop: 8,
+        marginBottom: 4,
+    },
+    chartHalfUnder: {
+        height: HALF_HEIGHT,
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+        width: '100%',
+        paddingBottom: 1,
+    },
+    chartHalfOver: {
+        height: HALF_HEIGHT,
+        justifyContent: 'flex-start',
+        alignItems: 'center',
+        width: '100%',
+        paddingTop: 1,
+    },
+    barDateLabel: {
+        fontSize: 9,
+        color: '#999',
+        fontWeight: '700',
+        textAlign: 'center',
+        marginTop: 4,
+        width: 52,
+    },
+    barBase: {
+        width: 20,
+        borderRadius: 4,
+    },
+    barDateTextAbsolute: {
+        position: 'absolute',
+        bottom: 5,           // Moved up since it's only one line now
+        fontSize: 9,
+        color: '#999',
+        fontWeight: '700',
+        width: 45,
+        textAlign: 'center',
+    },
+    barValueText: {
+        fontSize: 9,         // Slightly smaller text to prevent overlapping
+        fontWeight: '900',
+        textAlign: 'center',
+        width: 40,
+        zIndex: 10
+    },
+    yAxisText: { fontSize: 9, color: '#999', fontWeight: '700' }
 });
