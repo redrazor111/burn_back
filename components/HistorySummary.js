@@ -60,6 +60,7 @@ export default function HistorySummary() {
     const [meals, setMeals] = useState([]);
     const [activities, setActivities] = useState([]);
     const [targetCalories, setTargetCalories] = useState(2000);
+    const [targetProtein, setTargetProtein] = useState(0); // New State
     const [expandedSections, setExpandedSections] = useState({});
     const [searchQuery, setSearchQuery] = useState('');
     const [showShop, setShowShop] = useState(false);
@@ -75,7 +76,11 @@ export default function HistorySummary() {
     useEffect(() => {
         if (!userId) return;
         const profileUnsub = onSnapshot(doc(db, 'users', userId, 'profile', 'data'), (snap) => {
-            if (snap.exists()) setTargetCalories(Number(snap.data().targetCalories || 2000));
+            if (snap.exists()) {
+                const data = snap.data();
+                setTargetCalories(Number(data.targetCalories || 2000));
+                setTargetProtein(Number(data.targetProtein || 0)); // Fetch Target Protein
+            }
         });
         const mealsUnsub = onSnapshot(query(collection(db, 'users', userId, 'meals'), orderBy('createdAt', 'desc')), (snap) => {
             setMeals(snap.docs.map(d => ({ ...d.data(), id: d.id })));
@@ -123,8 +128,9 @@ export default function HistorySummary() {
             const name = (m.productName || m.identifiedProduct || "").toLowerCase();
             if (lowerQuery && !name.includes(lowerQuery)) return;
             const key = getSafeDateKey(m.date || m.createdAt?.toDate?.()?.toISOString());
-            if (!groups[key]) groups[key] = { intake: 0, burned: 0, target: targetCalories, rawMeals: [], rawActs: [] };
+            if (!groups[key]) groups[key] = { intake: 0, protein: 0, burned: 0, target: targetCalories, rawMeals: [], rawActs: [] };
             groups[key].intake += Number(m.calories || 0);
+            groups[key].protein += Number(m.protein || 0); // Aggregate Protein
             groups[key].rawMeals.push(m);
         });
 
@@ -132,7 +138,7 @@ export default function HistorySummary() {
             const type = (a.type || "").toLowerCase();
             if (lowerQuery && !type.includes(lowerQuery)) return;
             const key = getSafeDateKey(a.date || a.createdAt?.toDate?.()?.toISOString());
-            if (!groups[key]) groups[key] = { intake: 0, burned: 0, target: targetCalories, rawMeals: [], rawActs: [] };
+            if (!groups[key]) groups[key] = { intake: 0, protein: 0, burned: 0, target: targetCalories, rawMeals: [], rawActs: [] };
             groups[key].burned += Number(a.caloriesBurned || 0);
             groups[key].rawActs.push(a);
         });
@@ -150,9 +156,13 @@ export default function HistorySummary() {
 
     const todayStats = useMemo(() => {
         const todayKey = getSafeDateKey(new Date().toISOString());
-        const day = stats[todayKey] || { intake: 0, burned: 0 };
-        return { ...day, remaining: targetCalories + day.burned - day.intake };
-    }, [stats, targetCalories]);
+        const day = stats[todayKey] || { intake: 0, burned: 0, protein: 0 };
+        return {
+            ...day,
+            remaining: targetCalories + day.burned - day.intake,
+            proteinRemaining: Math.max(targetProtein - day.protein, 0)
+        };
+    }, [stats, targetCalories, targetProtein]);
 
     const sortedDates = Object.keys(stats).sort((a, b) => b.localeCompare(a));
 
@@ -207,11 +217,25 @@ export default function HistorySummary() {
                 </View>
                 <View style={styles.headerAccentBar} />
 
+                {/* Today Summary Card with Protein Added */}
                 <View style={styles.todaySummaryCard}>
-                    <View>
+                    <View style={{ flex: 1 }}>
                         <Text style={styles.todayLabel}>TODAY'S REMAINING</Text>
-                        <Text style={styles.todayValue}>{todayStats.remaining} <Text style={styles.todayUnit}>cal</Text></Text>
-                        <Text style={styles.goalText}>DAILY GOAL: {targetCalories} cal</Text>
+
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.todayValue}>{todayStats.remaining} <Text style={styles.todayUnit}>cal</Text></Text>
+                                <Text style={styles.goalText}>CAL GOAL: {targetCalories} cal</Text>
+                            </View>
+
+                            {/* Divider Line */}
+                            <View style={{ width: 1, height: '80%', backgroundColor: 'rgba(255,255,255,0.2)', mx: 15 }} />
+
+                            <View style={{ flex: 1, paddingLeft: 15 }}>
+                                <Text style={styles.todayValue}>{todayStats.proteinRemaining}<Text style={styles.todayUnit}>g</Text></Text>
+                                <Text style={styles.goalText}>PROTEIN GOAL: {targetProtein}g</Text>
+                            </View>
+                        </View>
                     </View>
                     <View style={styles.fireIconBg}>
                         <MaterialCommunityIcons name="fire" size={32} color="#FF9800" />
@@ -245,6 +269,9 @@ export default function HistorySummary() {
                     const isDeficit = netRemaining >= 0;
                     const todayKey = getSafeDateKey(new Date().toISOString());
                     const readableDate = dateKey === todayKey ? "Today" : getOrdinalDate(dateKey);
+                    const protIn = data.protein || 0;
+                    const protRemaining = Math.max(targetProtein - protIn, 0);
+                    const protPct = targetProtein > 0 ? Math.min(Math.round((protIn / targetProtein) * 100), 100) : 0;
 
                     return (
                         <View key={dateKey} style={styles.daySection}>
@@ -259,13 +286,32 @@ export default function HistorySummary() {
                                     </View>
                                 </View>
                                 <View style={styles.mathRow}>
-                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Goal</Text><Text style={styles.mathValue}>{targetCalories}</Text></View>
+                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Cal Goal</Text><Text style={styles.mathValue}>{targetCalories} cal</Text></View>
                                     <Text style={styles.mathOperator}>+</Text>
-                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Burn</Text><Text style={styles.mathValue}>{data.burned}</Text></View>
+                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Burn</Text><Text style={styles.mathValue}>{data.burned} cal</Text></View>
                                     <Text style={styles.mathOperator}>-</Text>
-                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>In</Text><Text style={styles.mathValue}>{data.intake}</Text></View>
+                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>In</Text><Text style={styles.mathValue}>{data.intake} cal</Text></View>
                                     <Text style={styles.mathOperator}>=</Text>
                                     <View style={styles.mathItem}><Text style={styles.mathLabel}>Balance</Text><Text style={[styles.mathValue, { color: isDeficit ? '#1B4D20' : '#C62828' }]}>{Math.abs(netRemaining)} cal</Text></View>
+                                </View>
+
+                                <View style={{ height: 1, backgroundColor: '#F0F0F0', marginVertical: 10, opacity: 0.6 }} />
+
+                                <View style={styles.mathRow}>
+                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Prot Goal</Text><Text style={styles.mathValue}>{targetProtein}g</Text></View>
+                                    <Text style={styles.mathOperator}> </Text>
+                                    <View style={styles.mathItem}>
+                                        <View style={{ backgroundColor: protPct === 100 ? '#E8F5E9' : '#F3E5F5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                            <Text style={{ fontSize: 9, fontWeight: '900', color: protPct === 100 ? '#2E7D32' : '#7B1FA2' }}>{protPct}% MET</Text>
+                                        </View>
+                                    </View>
+                                    <Text style={styles.mathOperator}>-</Text>
+                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Prot In</Text><Text style={styles.mathValue}>{protIn}g</Text></View>
+                                    <Text style={styles.mathOperator}>=</Text>
+                                    <View style={styles.mathItem}>
+                                        <Text style={styles.mathLabel}>Remaining</Text>
+                                        <Text style={[styles.mathValue, { color: '#7B1FA2' }]}>{protRemaining}g</Text>
+                                    </View>
                                 </View>
                                 {(expandedSections[dateKey] || searchQuery) && (
                                     <View style={styles.detailsList}>
@@ -279,6 +325,7 @@ export default function HistorySummary() {
                 })}
             </ScrollView>
 
+            {/* Modal Components remain unchanged */}
             <Modal visible={showChart} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowChart(false)}>
                 <View style={styles.modalContainer}>
                     <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
@@ -322,8 +369,6 @@ export default function HistorySummary() {
 
                             <View style={{ marginTop: 20 }}>
                                 <View style={[styles.chartWrapper, { height: 280 }]}>
-
-                                    {/* Goal Line */}
                                     <View style={[styles.targetBaseline, { top: 130 }]} />
                                     <View style={{ position: 'absolute', top: 120, left: 8, zIndex: 25 }}>
                                         <Text style={{ fontSize: 8, color: '#B8860B', fontWeight: '900', letterSpacing: 0.5 }}>GOAL</Text>
@@ -348,14 +393,10 @@ export default function HistorySummary() {
                                                 (Math.abs(balance) / (maxVal / 2)) * HALF_HEIGHT,
                                                 HALF_HEIGHT - 2
                                             );
-
                                             const parts = dateKey.split('-');
                                             const dDate = `${parts[2]}/${parts[1]}`;
-
                                             return (
                                                 <View key={dateKey} style={styles.barColumn}>
-
-                                                    {/* Upper half — under goal (green bar grows upward) */}
                                                     <View style={styles.chartHalfUnder}>
                                                         {!isOver && balance !== 0 && (
                                                             <>
@@ -366,8 +407,6 @@ export default function HistorySummary() {
                                                             </>
                                                         )}
                                                     </View>
-
-                                                    {/* Lower half — over goal (red bar grows downward) */}
                                                     <View style={styles.chartHalfOver}>
                                                         {isOver && (
                                                             <>
@@ -378,29 +417,19 @@ export default function HistorySummary() {
                                                             </>
                                                         )}
                                                     </View>
-
-                                                    {/* Date label */}
                                                     <Text style={styles.barDateLabel}>{dDate}</Text>
                                                 </View>
                                             );
                                         })}
                                     </ScrollView>
                                 </View>
-
                                 <Text style={styles.chartHint}>Daily calorie balance trend</Text>
                             </View>
                         </View>
                     </ScrollView>
-
-                    <TouchableOpacity
-                        style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]}
-                        onPress={() => setShowChart(false)}
-                    >
-                        <Text style={styles.bottomCloseBtnText}>Close</Text>
-                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
                 </View>
             </Modal>
-
             <Modal visible={showGuide} animationType="slide" presentationStyle="pageSheet"><View style={styles.modalContainer}><View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}><Text style={styles.modalTitle}>Health Guide</Text><TouchableOpacity onPress={() => setShowGuide(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity></View><View style={{ flex: 1 }}><Guide /></View><TouchableOpacity style={styles.bottomCloseBtn} onPress={() => setShowGuide(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity></View></Modal>
             <Modal visible={showShop} animationType="slide" presentationStyle="pageSheet"><View style={styles.modalContainer}><View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}><Text style={styles.modalTitle}>Shop at Amazon</Text><TouchableOpacity onPress={() => setShowShop(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity></View><View style={{ flex: 1 }}><Shop /></View><TouchableOpacity style={styles.bottomCloseBtn} onPress={() => setShowShop(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity></View></Modal>
             <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} />
@@ -408,6 +437,7 @@ export default function HistorySummary() {
     );
 }
 
+// Styles remain the same, updated todaySummaryCard in the JSX above
 const styles = StyleSheet.create({
     fullScreen: { flex: 1, backgroundColor: '#FBFBFB' },
     header: { paddingHorizontal: 20, paddingBottom: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
@@ -457,7 +487,7 @@ const styles = StyleSheet.create({
     chartWrapper: {
         backgroundColor: '#F9F9F9',
         borderRadius: 16,
-        overflow: 'hidden', // CRITICAL: This clips the bars if they try to go outside
+        overflow: 'hidden',
         borderWidth: 1,
         borderColor: '#EEE'
     },
@@ -468,7 +498,7 @@ const styles = StyleSheet.create({
         height: 2,
         backgroundColor: '#B8860B',
         zIndex: 20,
-        elevation: 20, // Android needs this too
+        elevation: 20,
     },
     barColumn: {
         width: 52,
@@ -520,17 +550,8 @@ const styles = StyleSheet.create({
         width: 20,
         borderRadius: 4,
     },
-    barDateTextAbsolute: {
-        position: 'absolute',
-        bottom: 5,           // Moved up since it's only one line now
-        fontSize: 9,
-        color: '#999',
-        fontWeight: '700',
-        width: 45,
-        textAlign: 'center',
-    },
     barValueText: {
-        fontSize: 9,         // Slightly smaller text to prevent overlapping
+        fontSize: 9,
         fontWeight: '900',
         textAlign: 'center',
         width: 40,

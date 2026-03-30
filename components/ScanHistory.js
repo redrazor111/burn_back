@@ -116,6 +116,8 @@ export default function ScanHistory() {
     const todayKey = getSafeDateKey(now.toISOString());
     return {
       today: groupedData[todayKey]?.totalCalories || 0,
+      todayProt: groupedData[todayKey]?.totalProtein || 0, // Added Today Protein
+      todayCarb: groupedData[todayKey]?.totalCarbs || 0,   // Added Today Carbs
       dailyAvg: Math.round(totalCals / activeDays),
       protAvg: Math.round(totalProt / activeDays),
       carbAvg: Math.round(totalCarb / activeDays)
@@ -216,11 +218,28 @@ export default function ScanHistory() {
           </View>
         </View>
         <View style={styles.headerAccentBar} />
+
         <View style={styles.todaySummaryCard}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.todayLabel}>TODAY'S INTAKE</Text>
             <Text style={styles.todayValue}>{averages.today.toLocaleString()} <Text style={styles.todayUnit}>cal</Text></Text>
+
+            {/* Added Divider */}
+            <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.15)', marginVertical: 8, width: '80%' }} />
+
+            {/* Added Macros Row */}
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 15 }}>
+                <MaterialCommunityIcons name="molecule" size={14} color="rgba(255,255,255,0.6)" style={{ marginRight: 4 }} />
+                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>{averages.todayProt}g <Text style={{ fontSize: 10, opacity: 0.7 }}>PROT</Text></Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <MaterialCommunityIcons name="barley" size={14} color="rgba(255,255,255,0.6)" style={{ marginRight: 4 }} />
+                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>{averages.todayCarb}g <Text style={{ fontSize: 10, opacity: 0.7 }}>CARB</Text></Text>
+              </View>
+            </View>
           </View>
+
           <View style={styles.burnIconBg}>
             <MaterialCommunityIcons name="silverware-fork-knife" size={32} color="#FF9800" />
           </View>
@@ -233,7 +252,7 @@ export default function ScanHistory() {
             <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(dateKey)}>
               <View style={styles.sectionHeaderTextGroup}>
                 <Text style={styles.sectionLabel}>{getFullReadableDate(dateKey).toUpperCase()}</Text>
-                <Text style={styles.sectionTotalValue}>{groupedData[dateKey].totalCalories.toLocaleString()} cal</Text>
+                <Text style={styles.sectionTotalValue}>Cal {groupedData[dateKey].totalCalories.toLocaleString()} cal • Prot {groupedData[dateKey].totalProtein.toLocaleString()} g • Carb {groupedData[dateKey].totalCarbs.toLocaleString()} g</Text>
               </View>
               <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#9E9E9E" />
             </TouchableOpacity>

@@ -86,12 +86,20 @@ const ACTIVITY_TYPES: { label: string; met: number; icon: MaterialIconName }[] =
   { label: "Other", met: 4.5, icon: "dots-horizontal" },
 ];
 
+const GOAL_OPTIONS = [
+  { label: 'Lose Weight', calMod: -500, protMult: 2.2 },
+  { label: 'Maintain', calMod: 0, protMult: 1.8 },
+  { label: 'Gain Muscle', calMod: 300, protMult: 2.0 },
+];
+
 function SummaryScreen({ onRecommendationsFound }: any) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const [userId, setUserId] = useState<string | null | undefined>(null);
 
   const [targetCalories, setTargetCalories] = useState(0);
+  const [targetProtein, setTargetProtein] = useState(0);
+  const [goalType, setGoalType] = useState('Maintain');
   const [gender, setGender] = useState('Male');
   const [age, setAge] = useState(0);
   const [weight, setWeight] = useState(0);
@@ -102,6 +110,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [activityQuotaCount, setActivityQuotaCount] = useState(0);
 
   const [tempCalories, setTempCalories] = useState('');
+  const [tempProtein, setTempProtein] = useState('');
+  const [tempGoalType, setTempGoalType] = useState('Maintain');
   const [tempGender, setTempGender] = useState('Male');
   const [tempAge, setTempAge] = useState('');
   const [tempWeight, setTempWeight] = useState('');
@@ -233,10 +243,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   useEffect(() => {
-    if (!isProfileLoading && targetCalories === 0) {
+    if (!isProfileLoading && (targetCalories === 0 || targetProtein === 0)) {
       setIsEditingTarget(true);
     }
-  }, [targetCalories, isProfileLoading]);
+  }, [targetCalories, targetProtein, isProfileLoading]);
 
   useEffect(() => {
     const init = async () => {
@@ -250,10 +260,14 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         if (docSnap.exists()) {
           const data = docSnap.data();
           setTargetCalories(data.targetCalories || 0);
+          setTargetProtein(data.targetProtein || 0);
+          setGoalType(data.goalType || 'Maintain');
           setGender(data.gender || 'Male');
           setAge(Number(data.age) || 0);
           setWeight(Number(data.weight) || 0);
           setTempCalories((data.targetCalories || '').toString());
+          setTempProtein((data.targetProtein || '').toString());
+          setTempGoalType(data.goalType || 'Maintain');
           setTempGender(data.gender || 'Male');
           setTempAge((data.age || '').toString());
           setTempWeight((data.weight || '').toString());
@@ -263,7 +277,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           setAutoSyncEnabled(isAutoSync);
           setLastSyncedTime(data.lastSyncedTime || 'Never');
 
-          if (data.isNewUser !== false || data.targetCalories === 0) {
+          if (data.isNewUser !== false || data.targetCalories === 0 || data.targetProtein === 0) {
             setIsEditingTarget(true);
           }
 
@@ -275,7 +289,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             handleHealthSync();
           }
         } else {
-          await setDoc(userRef, { lastSavedDate: today, waterCups: 0, geminiCount: 0, mealsCount: 0, activitiesCount: 0, targetCalories: 0, gender: 'Male', age: 0, weight: 0, isNewUser: true, autoSyncEnabled: false }, { merge: true });
+          await setDoc(userRef, { lastSavedDate: today, waterCups: 0, geminiCount: 0, mealsCount: 0, activitiesCount: 0, targetCalories: 0, targetProtein: 0, gender: 'Male', age: 0, weight: 0, isNewUser: true, autoSyncEnabled: false, goalType: 'Maintain' }, { merge: true });
           setIsEditingTarget(true);
         }
       }
@@ -296,6 +310,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setTargetCalories(Number(data.targetCalories) || 0);
+        setTargetProtein(Number(data.targetProtein) || 0);
+        setGoalType(data.goalType || 'Maintain');
         setGender(data.gender || 'Male');
         setAge(Number(data.age) || 0);
         setWeight(Number(data.weight) || 0);
@@ -385,26 +401,29 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const calculateSuggestedGoal = () => {
     const w = parseFloat(tempWeight);
     const a = parseInt(tempAge);
+    const selectedGoal = GOAL_OPTIONS.find(g => g.label === tempGoalType) || GOAL_OPTIONS[1];
 
     if (isNaN(w) || w <= 0 || isNaN(a) || a <= 0) {
-      alert("Please enter a valid Age and Weight.");
+      alert("Please enter Age and Weight first.");
       return;
     }
 
-    // Standard averages for height since it's not in your profile yet
     const height = tempGender === 'Male' ? 175 : 162;
 
     let bmr = (10 * w) + (6.25 * height) - (5 * a);
     bmr = tempGender === 'Male' ? bmr + 5 : bmr - 161;
 
-    // Apply a 1.2x multiplier for "Sedentary/Maintenance" activity level
-    const suggestion = Math.round(bmr * 1.2);
+    const suggestion = Math.round((bmr * 1.2) + selectedGoal.calMod);
+    const protSuggestion = Math.round(w * selectedGoal.protMult);
+
     setTempCalories(suggestion.toString());
+    setTempProtein(protSuggestion.toString());
   };
 
   const saveProfileData = async () => {
     // 1. Convert inputs to numbers
     const cals = Math.floor(Number(tempCalories));
+    const prot = Math.floor(Number(tempProtein));
     const ageNum = Math.floor(Number(tempAge));
     const weightNum = Math.floor(Number(tempWeight));
 
@@ -414,25 +433,33 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       return;
     }
 
-    // 3. Age Validation (13 - 120) - FIXED: Now checks ageNum
+    // 3. Protein Validation (30 - 500)
+    if (isNaN(prot) || prot < 30 || prot > 500) {
+      Alert.alert("Invalid Protein", "Please enter a goal between 30g and 500g.");
+      return;
+    }
+
+    // 4. Age Validation (13 - 120)
     if (isNaN(ageNum) || ageNum < 13 || ageNum > 120) {
       Alert.alert("Invalid Age", "Please enter a valid age between 13 and 120.");
       return;
     }
 
-    // 4. Weight Validation (30 - 500) - FIXED: Now checks weightNum
+    // 5. Weight Validation (30 - 500)
     if (isNaN(weightNum) || weightNum < 30 || weightNum > 500) {
       Alert.alert("Invalid Weight", "Please enter a weight between 30kg and 500kg.");
       return;
     }
 
-    // 5. Database Save (Only reaches here if all values are valid)
+    // 6. Database Save
     try {
       if (userId) {
-        setIsSaving(true); // Assuming you have a loading state
+        setIsSaving(true);
 
         await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
           targetCalories: cals,
+          targetProtein: prot,
+          goalType: tempGoalType,
           gender: tempGender,
           age: ageNum,
           weight: weightNum,
@@ -737,7 +764,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           </View>
         </View>
         <View style={styles.headerAccentBar} />
-        <Text style={styles.subtitle}>{age}yr {gender} • {weight}kg Profile Active</Text>
+        <Text style={styles.subtitle}>{goalType} • {weight}kg • Cal Goal: {targetCalories}cal • Pro Goal: {targetProtein}g</Text>
       </View>
 
       <View style={{ flex: 1 }}>
@@ -748,11 +775,30 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               <MaterialCommunityIcons name="pencil-circle" size={18} color="#1B4D20" />
             </View>
 
+            {/* ROW 1: CALORIES (Original Layout) */}
             <View style={styles.targetSplitRow}>
-              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Goal</Text><Text style={styles.targetValue}>{targetCalories}<Text style={styles.unitSmall}> CAL</Text></Text></View>
-              <View style={styles.verticalDivider} /><View style={styles.targetColumn}><Text style={styles.targetLabel}>Intake</Text><Text style={styles.targetValue}>{totalConsumed}<Text style={styles.unitSmall}> CAL</Text></Text></View>
-              <View style={styles.verticalDivider} /><View style={styles.targetColumn}><Text style={styles.targetLabel}>Burned</Text><Text style={[styles.targetValue, { color: '#1976D2' }]}>{totalBurned}<Text style={styles.unitSmall}> CAL</Text></Text></View>
-              <View style={styles.verticalDivider} /><View style={styles.targetColumn}><Text style={styles.targetLabel}>Left</Text><Text style={[styles.targetValue, { color: remainingCalories <= 200 ? '#FF5252' : '#1B4D20' }]}>{remainingCalories}<Text style={styles.unitSmall}> CAL</Text></Text></View>
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Cal Goal</Text><Text style={styles.targetValue}>{targetCalories}<Text style={styles.unitSmall}> CAL</Text></Text></View>
+              <View style={styles.verticalDivider} />
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Cal Intake</Text><Text style={styles.targetValue}>{totalConsumed}<Text style={styles.unitSmall}> CAL</Text></Text></View>
+              <View style={styles.verticalDivider} />
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Cal Burned</Text><Text style={[styles.targetValue, { color: '#1976D2' }]}>{totalBurned}<Text style={styles.unitSmall}> CAL</Text></Text></View>
+              <View style={styles.verticalDivider} />
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Cal Left</Text><Text style={[styles.targetValue, { color: remainingCalories <= 200 ? '#FF5252' : '#1B4D20' }]}>{remainingCalories}<Text style={styles.unitSmall}> CAL</Text></Text></View>
+            </View>
+
+            {/* NEW HORIZONTAL SEPARATOR */}
+            <View style={{ height: 1, backgroundColor: '#F0F0F0', marginHorizontal: 15 }} />
+
+            {/* ROW 2: PROTEIN (New Row) */}
+            <View style={styles.targetSplitRow}>
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Pro Goal</Text><Text style={styles.targetValue}>{targetProtein}<Text style={styles.unitSmall}> G</Text></Text></View>
+              <View style={styles.verticalDivider} />
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Pro Intake</Text><Text style={styles.targetValue}>{totalProteinGrams}<Text style={styles.unitSmall}> G</Text></Text></View>
+              <View style={styles.verticalDivider} />
+              {/* Leaving Burned equivalent empty/placeholder as requested */}
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>-</Text><Text style={styles.targetValue}>—</Text></View>
+              <View style={styles.verticalDivider} />
+              <View style={styles.targetColumn}><Text style={styles.targetLabel}>Pro Left</Text><Text style={[styles.targetValue, { color: '#E91E63' }]}>{Math.max(targetProtein - totalProteinGrams, 0)}<Text style={styles.unitSmall}> G</Text></Text></View>
             </View>
 
             <View style={styles.macroSummaryRow}>
@@ -1228,80 +1274,67 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         <View style={styles.editOverlay}>
           <View style={styles.editBox}>
             <Text style={styles.editTitle}>
-              {targetCalories === 0 ? "Welcome! Setup Profile" : "Edit Profile"}
+              {targetCalories === 0 ? "Create Profile" : "Edit Profile"}
             </Text>
 
-            {/* Add a welcome message for new users */}
-            {targetCalories === 0 && (
-              <Text style={{ fontSize: 12, color: '#666', textAlign: 'center', marginBottom: 15, lineHeight: 18 }}>
-                Before you get started, set your daily calorie goal and profile so we can personalise your experience.
-              </Text>
-            )}
-
-            <View style={styles.inputGroup}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                <Text style={styles.inputLabel}>Daily Calorie Goal</Text>
-                <TouchableOpacity onPress={calculateSuggestedGoal}>
-                  <Text style={{ fontSize: 10, color: '#1B4D20', fontWeight: '900' }}>✨ AUTO-CALCULATE</Text>
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                style={styles.editInputSmall}
-                value={tempCalories}
-                onChangeText={setTempCalories}
-                keyboardType="numeric"
-              />
-            </View>
-
+            {/* INPUTS: Gender, Age, and Weight at the top */}
             <View style={styles.row}>
               <View style={[styles.inputGroup, { flex: 2, marginRight: 8 }]}>
                 <Text style={styles.inputLabel}>Gender</Text>
                 <View style={styles.genderPicker}>
                   {['Male', 'Female'].map(g => (
-                    <TouchableOpacity
-                      key={g}
-                      onPress={() => setTempGender(g)}
-                      style={[styles.genderBtn, tempGender === g && styles.genderBtnActive]}
-                    >
+                    <TouchableOpacity key={g} onPress={() => setTempGender(g)} style={[styles.genderBtn, tempGender === g && styles.genderBtnActive]}>
                       <Text style={{ fontSize: 12, color: tempGender === g ? '#1B4D20' : '#999' }}>{g}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               </View>
-              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+              <View style={[styles.inputGroup, { flex: 0.8, marginRight: 8 }]}>
                 <Text style={styles.inputLabel}>Age</Text>
-                <TextInput
-                  style={styles.editInputSmall}
-                  value={tempAge}
-                  onChangeText={setTempAge}
-                  keyboardType="numeric"
-                />
+                <TextInput style={styles.editInputSmall} value={tempAge} onChangeText={setTempAge} keyboardType="numeric" placeholder="yrs" />
               </View>
-              <View style={[styles.inputGroup, { flex: 1.2 }]}>
-                <Text style={styles.inputLabel}>Wt (kg)</Text>
-                <TextInput
-                  style={styles.editInputSmall}
-                  value={tempWeight}
-                  onChangeText={setTempWeight}
-                  keyboardType="numeric"
-                />
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <Text style={styles.inputLabel}>Weight</Text>
+                <TextInput style={styles.editInputSmall} value={tempWeight} onChangeText={setTempWeight} keyboardType="numeric" placeholder="kg" />
+              </View>
+            </View>
+
+            {/* GOAL SELECTION */}
+            <Text style={[styles.inputLabel, { marginTop: 10 }]}>Goal</Text>
+            <View style={[styles.genderPicker, { marginBottom: 15 }]}>
+              {GOAL_OPTIONS.map(g => (
+                <TouchableOpacity key={g.label} onPress={() => setTempGoalType(g.label)} style={[styles.genderBtn, tempGoalType === g.label && styles.genderBtnActive]}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: tempGoalType === g.label ? '#1B4D20' : '#999' }}>{g.label.toUpperCase()}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* PROMINENT AUTO-CALCULATE BUTTON */}
+            <TouchableOpacity style={styles.prominentCalcBtn} onPress={calculateSuggestedGoal}>
+              <MaterialCommunityIcons name="calculator-variant" size={20} color="#FFF" />
+              <Text style={styles.prominentCalcBtnText}>AUTO-CALCULATE TARGETS</Text>
+            </TouchableOpacity>
+
+            {/* TARGET RESULTS */}
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.inputLabel}>Daily Cals</Text>
+                <TextInput style={styles.editInputSmall} value={tempCalories} onChangeText={setTempCalories} keyboardType="numeric" />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <Text style={styles.inputLabel}>Protein (g)</Text>
+                <TextInput style={styles.editInputSmall} value={tempProtein} onChangeText={setTempProtein} keyboardType="numeric" />
               </View>
             </View>
 
             <View style={styles.editActions}>
               {targetCalories !== 0 && (
-                <TouchableOpacity
-                  style={[styles.modalBtn, styles.cancelBtn]}
-                  onPress={() => setIsEditingTarget(false)}
-                >
-                  <Text>Cancel</Text>
+                <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setIsEditingTarget(false)}>
+                  <Text style={{ fontWeight: '700' }}>Cancel</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.saveBtn, { flex: targetCalories === 0 ? 1 : 0.48 }]}
-                onPress={saveProfileData}
-              >
-                <Text style={{ color: '#fff' }}>{targetCalories === 0 ? "Get Started" : "Save"}</Text>
+              <TouchableOpacity style={[styles.modalBtn, styles.saveBtn, { flex: targetCalories === 0 ? 1 : 0.48 }]} onPress={saveProfileData}>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>{targetCalories === 0 ? "Get Started" : "Save"}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1706,43 +1739,65 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   premiumSyncRow: {
-    backgroundColor: '#FFF8E1', // Light Gold Background
-    borderColor: '#FFD700',      // Solid Gold Border
+    backgroundColor: '#FFF8E1',
+    borderColor: '#FFD700',
     borderWidth: 1,
-    paddingVertical: 8,         // Making it bigger
+    paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 25,
-    justifyContent: 'space-between', // Push text and refresh apart
-    width: '90%',               // Expanding width
+    justifyContent: 'space-between',
+    width: '90%',
   },
   syncIndicator: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#4CAF50', // Original Green dot
+    backgroundColor: '#4CAF50',
     marginRight: 6,
   },
   premiumSyncIndicator: {
-    width: 10,                  // Making the dot bigger
+    width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#FFD700', // Gold Dot
+    backgroundColor: '#FFD700',
     marginRight: 8,
   },
   syncText: {
-    fontSize: 11,               // Original size
-    color: '#666',              // Original color
+    fontSize: 11,
+    color: '#666',
     fontWeight: '500',
   },
   premiumSyncText: {
-    fontSize: 13,               // Making it bigger
-    color: '#B8860B',           // Dark Goldenrod
-    fontWeight: '700',          // Bolder
+    fontSize: 13,
+    color: '#B8860B',
+    fontWeight: '700',
   },
   refreshIcon: {
     marginLeft: 8,
     borderLeftWidth: 1,
     borderLeftColor: '#DDD',
     paddingLeft: 8,
+  },
+  prominentCalcBtn: {
+    backgroundColor: '#DAA520',
+    width: '100%',
+    flexDirection: 'row',
+    paddingVertical: 14,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+    marginTop: 5,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+  },
+  prominentCalcBtnText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '900',
+    marginLeft: 8,
+    letterSpacing: 0.5
   },
 });
