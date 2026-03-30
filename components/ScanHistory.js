@@ -252,7 +252,7 @@ export default function ScanHistory() {
             <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(dateKey)}>
               <View style={styles.sectionHeaderTextGroup}>
                 <Text style={styles.sectionLabel}>{getFullReadableDate(dateKey).toUpperCase()}</Text>
-                <Text style={styles.sectionTotalValue}>Cal {groupedData[dateKey].totalCalories.toLocaleString()} cal • Prot {groupedData[dateKey].totalProtein.toLocaleString()} g • Carb {groupedData[dateKey].totalCarbs.toLocaleString()} g</Text>
+                <Text style={styles.sectionTotalValue}>Cal {groupedData[dateKey].totalCalories.toLocaleString()} cal • Prot {groupedData[dateKey].totalProtein.toLocaleString()}g • Carb {groupedData[dateKey].totalCarbs.toLocaleString()}g</Text>
               </View>
               <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#9E9E9E" />
             </TouchableOpacity>
