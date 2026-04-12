@@ -30,10 +30,12 @@ export default async function handler(req: any, res: any) {
     const prompt = isDietPlan
       ? `You are an expert nutritionist. Generate a 1-day meal plan for a ${userContext?.dietPreference || 'Meat'} diet.
 
-         DIETARY RULES:
-         - If 'Meat': Include lean proteins like chicken, beef, or fish.
-         - If 'Veg': No meat or fish. Include eggs and dairy.
-         - If 'Vegan': No animal products at all (No meat, fish, eggs, or dairy).
+        DIETARY RESTRICTIONS:
+            - If 'Meat': Include lean proteins (chicken, beef, fish).
+            - If 'Veg': No meat/fish. Include eggs/dairy.
+            - If 'Vegan': Strictly plant-based. No animal products.
+            - If 'Gluten-Free': Strictly NO wheat, barley, rye, or gluten-containing grains.
+            - If 'Lactose-Free': Strictly NO dairy or lactose-containing ingredients. Use alternatives like almond/soy milk.
 
          GOALS:
          - Target: ${userContext?.targetCalories} calories
