@@ -11,7 +11,8 @@ export default async function handler(req: any, res: any) {
   const genAI = new GoogleGenerativeAI(API_KEY!);
 
   try {
-    const { base64Data, textQuery } = req.body;
+    const { base64Data, textQuery, userContext, isDietPlan = false } = req.body;
+
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash-lite",
       generationConfig: { responseMimeType: "application/json" },
@@ -26,8 +27,33 @@ export default async function handler(req: any, res: any) {
       sourceDescription = "the food in the image";
     }
 
-    const prompt = `
-      Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}
+    const prompt = isDietPlan
+      ? `You are an expert nutritionist. Generate a 1-day meal plan for a ${userContext?.dietPreference || 'Meat'} diet.
+
+         DIETARY RULES:
+         - If 'Meat': Include lean proteins like chicken, beef, or fish.
+         - If 'Veg': No meat or fish. Include eggs and dairy.
+         - If 'Vegan': No animal products at all (No meat, fish, eggs, or dairy).
+
+         GOALS:
+         - Target: ${userContext?.targetCalories} calories
+         - Target Protein: ${userContext?.targetProtein}g
+
+         Output 3 distinct versions: Standard (hits goals), Larger (+15% cals), and Smaller (-15% cals).
+         Return ONLY JSON. Nutrition values MUST be whole number integers.
+
+         Structure:
+         {
+           "mealPlans": [
+             {
+               "description": "Portion Size: Standard",
+               "meals": [{"name": "Meal Name", "calories": 0, "protein": 0, "carbs": 0}],
+               "totalCalories": 0,
+               "totalProtein": 0
+             }
+           ]
+         }`
+      : `Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}
       Provide 3 distinct possible interpretations/portion sizes.
 
       IMPORTANT:
@@ -47,9 +73,16 @@ export default async function handler(req: any, res: any) {
 
     const result = await model.generateContent(contentParts);
     const responseText = result.response.text();
-    return res.status(200).json(JSON.parse(responseText));
+    const parsedData = JSON.parse(responseText);
+
+    // Safety return ensuring both keys exist for the frontend
+    return res.status(200).json({
+      identifiedOptions: parsedData.identifiedOptions || [],
+      mealPlans: parsedData.mealPlans || []
+    });
 
   } catch (error: any) {
+    console.error("Backend Error:", error);
     return res.status(500).json({ error: error.message });
   }
 }
