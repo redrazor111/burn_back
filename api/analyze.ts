@@ -31,18 +31,49 @@ export default async function handler(req: any, res: any) {
       ? `You are an expert health coach and nutritionist.
         Task: Generate a ${userContext.duration} plan for: ${userContext.generateType.toUpperCase()}.
 
-        User Profile:
-        - Target: ${userContext.targetCalories} kcal/day, ${userContext.targetProtein}g protein/day
-        - Weight: ${userContext.weight}kg, Preference: ${userContext.dietPreference}
+        User Profile & Goals:
+        - Target: ${userContext.targetCalories} kcal/day
+        - Protein: ${userContext.targetProtein}g/day
+        - Diet Preference: ${userContext.dietPreference}
+        - Cuisines: ${userContext.cuisines}
+        - Weight: ${userContext.weight}kg
 
         STRICT DURATION RULES:
         1. If duration is "Daily": The "days" array in trainingProgram MUST contain exactly 1 day.
         2. If duration is "Weekly": The "days" array in trainingProgram MUST contain exactly 7 days.
-        3. If duration is "Monthly": The "days" array in trainingProgram MUST contain exactly 4 weeks of content (4 items representing Week 1, Week 2, etc., or 28 days).
 
-        STRICT JSON STRUCTURE:
-        - Meals: "standardPlan" -> { "generatedDuration": "${userContext.duration}", "meals": [{ "mealName": string, "items": [...] }] }
-        - Training: "trainingProgram" -> { "generatedDuration": "${userContext.duration}", "days": [{ "dayName": string, "title": string, "exercises": string[] }] }
+        STRICT JSON STRUCTURE INSTRUCTIONS:
+        1. If 'Meal' or 'Both': Return "standardPlan" following this schema:
+          {
+            "generatedDuration": "${userContext.duration}",
+            "totalCalories": number,
+            "totalProtein": number,
+            "meals": [
+              {
+                "mealName": string,
+                "mealCalories": number,
+                "mealProtein": number,
+                "items": [
+                  { "itemName": string, "quantity": string, "calories": number, "protein": number }
+                ]
+              }
+            ]
+          }
+
+        2. If 'Training' or 'Both': Return "trainingProgram" following this schema:
+          {
+            "generatedDuration": "${userContext.duration}",
+            "days": [
+              {
+                "dayName": "Day X",
+                "title": string,
+                "exercises": string[]
+              }
+            ]
+          }
+
+        3. If a type is NOT requested, set that root key to null.
+        4. All numeric values MUST be integers to the nearest whole number. Use "items" array for meals, NOT "dishes".
 
         Return ONLY valid JSON.`
       : `Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}
