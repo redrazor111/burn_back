@@ -29,26 +29,26 @@ export default async function handler(req: any, res: any) {
 
     const prompt = isDietPlan
       ? `You are an expert health coach and nutritionist.
-        Task: Generate a ${userContext.duration} plan for: ${userContext.generateType.toUpperCase()}.
+      Task: Generate a ${userContext.duration} plan for: ${userContext.generateType.toUpperCase()}.
 
-        User Profile & Goals:
-        - Target: ${userContext.targetCalories} kcal/day
-        - Protein: ${userContext.targetProtein}g/day
-        - Diet Preference: ${userContext.dietPreference}
-        - Cuisines: ${userContext.cuisines}
-        - Weight: ${userContext.weight}kg
+      User Profile & Goals:
+      - Target: ${userContext.targetCalories} kcal/day
+      - Protein: ${userContext.targetProtein}g/day
+      - Diet Preference: ${userContext.dietPreference}
+      - Cuisines: ${userContext.cuisines}
+      - Weight: ${userContext.weight}kg
 
-        STRICT INSTRUCTIONS:
-        1. If 'Meal' or 'Both': Provide ONE perfect "standardPlan".
-        2. If 'Training' or 'Both': Provide a detailed "trainingProgram" string with exercises, sets, and reps.
-        3. If a type is NOT requested, return that field as null.
-        4. Use whole numbers for all nutrients.
+      STRICT INSTRUCTIONS:
+      1. If 'Meal' or 'Both': Provide ONE perfect "standardPlan" and include "generatedDuration": "${userContext.duration}".
+      2. If 'Training' or 'Both': Provide a detailed "trainingProgram" object with "content" and "generatedDuration": "${userContext.duration}".
+      3. If a type is NOT requested, return that field as null.
+      4. Use whole numbers for all nutrients.
 
-        Return ONLY valid JSON:
-        {
-          "standardPlan": ${userContext.generateType === 'Training' ? 'null' : '{"description": "Standard Plan", "meals": [{"name": "...", "calories": 0, "protein": 0, "carbs": 0}], "totalCalories": 0, "totalProtein": 0}'},
-          "trainingProgram": ${userContext.generateType === 'Meal' ? 'null' : '"Detailed workout routine..."'}
-        }`
+      Return ONLY valid JSON:
+      {
+        "standardPlan": ${userContext.generateType === 'Training' ? 'null' : `{"description": "Plan", "generatedDuration": "${userContext.duration}", "meals": [{"name": "...", "calories": 0, "protein": 0, "carbs": 0}], "totalCalories": 0, "totalProtein": 0}`},
+        "trainingProgram": ${userContext.generateType === 'Meal' ? 'null' : `{"content": "Detailed workout routine...", "generatedDuration": "${userContext.duration}"}`}
+      }`
       : `Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}
       Provide 3 distinct possible interpretations/portion sizes.
 
