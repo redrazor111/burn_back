@@ -71,12 +71,11 @@ export default async function handler(req: any, res: any) {
     const responseText = result.response.text();
     const parsedData = JSON.parse(responseText);
 
-    // Safety return ensuring both keys exist for the frontend
     return res.status(200).json({
       identifiedOptions: parsedData.identifiedOptions || [],
-      mealPlans: parsedData.mealPlans || []
+      standardPlan: parsedData.standardPlan || null,
+      trainingProgram: parsedData.trainingProgram || null
     });
-
   } catch (error: any) {
     console.error("Backend Error:", error);
     return res.status(500).json({ error: error.message });
