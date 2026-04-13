@@ -157,7 +157,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [editCarbs, setEditCarbs] = useState('');
 
   const isInitialLoadComplete = useRef(false);
-  let { isPro } = useSubscriptionStatus();
+  const { isPro } = useSubscriptionStatus();
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
 
