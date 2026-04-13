@@ -29,27 +29,49 @@ export default async function handler(req: any, res: any) {
 
     const prompt = isDietPlan
       ? `You are an expert health coach and nutritionist.
-      Task: Generate a ${userContext.duration} plan for: ${userContext.generateType.toUpperCase()}.
+        Task: Generate a ${userContext.duration} plan for: ${userContext.generateType.toUpperCase()}.
 
-      User Profile & Goals:
-      - Target: ${userContext.targetCalories} kcal/day
-      - Protein: ${userContext.targetProtein}g/day
-      - Diet Preference: ${userContext.dietPreference}
-      - Cuisines: ${userContext.cuisines}
-      - Weight: ${userContext.weight}kg
+        User Profile & Goals:
+        - Target: ${userContext.targetCalories} kcal/day
+        - Protein: ${userContext.targetProtein}g/day
+        - Diet Preference: ${userContext.dietPreference}
+        - Cuisines: ${userContext.cuisines}
+        - Weight: ${userContext.weight}kg
 
-      STRICT INSTRUCTIONS:
-      1. If 'Meal' or 'Both': Provide ONE "standardPlan" object.
-      2. If 'Training' or 'Both': Provide a "trainingProgram" object with:
-         - "generatedDuration": "${userContext.duration}"
-         - "days": An array of objects: {"dayName": "Day 1", "title": "Full Body", "exercises": ["Exercise 1", "Exercise 2"]}
-      3. Use whole numbers for all nutrients.
+        STRICT JSON STRUCTURE INSTRUCTIONS:
+        1. If 'Meal' or 'Both': Return "standardPlan" following this schema:
+          {
+            "generatedDuration": "${userContext.duration}",
+            "totalCalories": number,
+            "totalProtein": number,
+            "meals": [
+              {
+                "mealName": string,
+                "mealCalories": number,
+                "mealProtein": number,
+                "items": [
+                  { "itemName": string, "quantity": string, "calories": number, "protein": number }
+                ]
+              }
+            ]
+          }
 
-      Return ONLY valid JSON:
-      {
-        "standardPlan": ${userContext.generateType === 'Training' ? 'null' : '{"meals": [...], "totalCalories": 0}'},
-        "trainingProgram": ${userContext.generateType === 'Meal' ? 'null' : `{"generatedDuration": "${userContext.duration}", "days": [{"dayName": "Day 1", "title": "Strength", "exercises": ["Squats: 3x12", "Bench: 3x10"]}]}`}
-      }`
+        2. If 'Training' or 'Both': Return "trainingProgram" following this schema:
+          {
+            "generatedDuration": "${userContext.duration}",
+            "days": [
+              {
+                "dayName": "Day X",
+                "title": string,
+                "exercises": string[]
+              }
+            ]
+          }
+
+        3. If a type is NOT requested, set that root key to null.
+        4. All numeric values MUST be integers. Use "items" array for meals, NOT "dishes".
+
+        Return ONLY valid JSON.`
       : `Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}
       Provide 3 distinct possible interpretations/portion sizes.
 
