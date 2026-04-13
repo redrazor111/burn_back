@@ -28,33 +28,27 @@ export default async function handler(req: any, res: any) {
     }
 
     const prompt = isDietPlan
-      ? `You are an expert nutritionist. Generate a 1-day meal plan for a ${userContext?.dietPreference || 'Meat'} diet.
+      ? `You are an expert health coach and nutritionist.
+        Task: Generate a ${userContext.duration} plan for: ${userContext.generateType.toUpperCase()}.
 
-        DIETARY RESTRICTIONS:
-            - If 'Meat': Include lean proteins (chicken, beef, fish).
-            - If 'Veg': No meat/fish. Include eggs/dairy.
-            - If 'Vegan': Strictly plant-based. No animal products.
-            - If 'Gluten-Free': Strictly NO wheat, barley, rye, or gluten-containing grains.
-            - If 'Lactose-Free': Strictly NO dairy or lactose-containing ingredients. Use alternatives like almond/soy milk.
+        User Profile & Goals:
+        - Target: ${userContext.targetCalories} kcal/day
+        - Protein: ${userContext.targetProtein}g/day
+        - Diet Preference: ${userContext.dietPreference}
+        - Cuisines: ${userContext.cuisines}
+        - Weight: ${userContext.weight}kg
 
-         GOALS:
-         - Target: ${userContext?.targetCalories} calories
-         - Target Protein: ${userContext?.targetProtein}g
+        STRICT INSTRUCTIONS:
+        1. If 'Meal' or 'Both': Provide ONE perfect "standardPlan".
+        2. If 'Training' or 'Both': Provide a detailed "trainingProgram" string with exercises, sets, and reps.
+        3. If a type is NOT requested, return that field as null.
+        4. Use whole numbers for all nutrients.
 
-         Output 3 distinct versions: Standard (hits goals), Larger (+15% cals), and Smaller (-15% cals).
-         Return ONLY JSON. Nutrition values MUST be whole number integers.
-
-         Structure:
-         {
-           "mealPlans": [
-             {
-               "description": "Portion Size: Standard",
-               "meals": [{"name": "Meal Name", "calories": 0, "protein": 0, "carbs": 0}],
-               "totalCalories": 0,
-               "totalProtein": 0
-             }
-           ]
-         }`
+        Return ONLY valid JSON:
+        {
+          "standardPlan": ${userContext.generateType === 'Training' ? 'null' : '{"description": "Standard Plan", "meals": [{"name": "...", "calories": 0, "protein": 0, "carbs": 0}], "totalCalories": 0, "totalProtein": 0}'},
+          "trainingProgram": ${userContext.generateType === 'Meal' ? 'null' : '"Detailed workout routine..."'}
+        }`
       : `Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}
       Provide 3 distinct possible interpretations/portion sizes.
 
