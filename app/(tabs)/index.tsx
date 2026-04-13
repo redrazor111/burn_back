@@ -158,7 +158,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
   const isInitialLoadComplete = useRef(false);
   let { isPro } = useSubscriptionStatus();
-  isPro = true;
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
 
