@@ -39,17 +39,16 @@ export default async function handler(req: any, res: any) {
       - Weight: ${userContext.weight}kg
 
       STRICT INSTRUCTIONS:
-      1. If 'Meal' or 'Both': Provide ONE perfect "standardPlan" and include "generatedDuration": "${userContext.duration}".
-      2. If 'Training' or 'Both': Provide a detailed "trainingProgram" object.
-         - The "content" MUST be organized by days (e.g., "Day 1: [Exercises], Day 2: [Exercises]") covering the full ${userContext.duration} period.
-         - Use "generatedDuration": "${userContext.duration}".
-      3. If a type is NOT requested, return that field as null.
-      4. Use whole numbers for all nutrients.
+      1. If 'Meal' or 'Both': Provide ONE "standardPlan" object.
+      2. If 'Training' or 'Both': Provide a "trainingProgram" object with:
+         - "generatedDuration": "${userContext.duration}"
+         - "days": An array of objects: {"dayName": "Day 1", "title": "Full Body", "exercises": ["Exercise 1", "Exercise 2"]}
+      3. Use whole numbers for all nutrients.
 
       Return ONLY valid JSON:
       {
-        "standardPlan": ${userContext.generateType === 'Training' ? 'null' : `{"description": "Plan", "generatedDuration": "${userContext.duration}", "meals": [{"name": "...", "calories": 0, "protein": 0, "carbs": 0}], "totalCalories": 0, "totalProtein": 0}`},
-        "trainingProgram": ${userContext.generateType === 'Meal' ? 'null' : `{"content": "Day 1: ... \\nDay 2: ... \\nDay 3: ...", "generatedDuration": "${userContext.duration}"}`}
+        "standardPlan": ${userContext.generateType === 'Training' ? 'null' : '{"meals": [...], "totalCalories": 0}'},
+        "trainingProgram": ${userContext.generateType === 'Meal' ? 'null' : `{"generatedDuration": "${userContext.duration}", "days": [{"dayName": "Day 1", "title": "Strength", "exercises": ["Squats: 3x12", "Bench: 3x10"]}]}`}
       }`
       : `Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}
       Provide 3 distinct possible interpretations/portion sizes.
