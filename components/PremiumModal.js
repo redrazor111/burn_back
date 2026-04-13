@@ -109,6 +109,7 @@ export default function PremiumModal({ visible, onClose }) {
             {[
               "Unlimited AI Meal Scans",
               "Unlimited AI Text Descriptions",
+              "AI Health Plan",
               "Full Graphical Trend Analysis",
               "Sync with Google Fit & Samsung Health"
             ].map((feature, index) => (

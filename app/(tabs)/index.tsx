@@ -312,7 +312,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       }
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
-      Alert.alert("Error", "Failed to generate plan.");
+      Alert.alert("Error", "Failed close and try again.");
     } finally {
       setIsDietLoading(false);
     }
@@ -329,7 +329,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       setIsDietModal(false);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
-      Alert.alert("Error", "Failed to save the plan.");
+      Alert.alert("Error", "Failed to save, close and try again.");
     }
   };
 
@@ -588,7 +588,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       }
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
-      Alert.alert("Error", "Failed to save profile.");
+      Alert.alert("Error", "Failed to save, close app and try again.");
     } finally {
       setIsSaving(false);
     }
@@ -999,21 +999,28 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               <MaterialCommunityIcons
                 name={(!isPro && geminiCount >= MAX_SEARCHES) ? "lock" : "camera"}
                 size={22}
-                color="#B8860B"
+                color={(!isPro && geminiCount >= MAX_SEARCHES) ? "#9E9E9E" : "#B8860B"}
               />
               <Text style={styles.tripleBtnText}>
-                {(!isPro && geminiCount >= MAX_SEARCHES)
-                  ? "Upgrade"
-                  : `AI Scan ${!isPro ? `(${MAX_SEARCHES - Number(geminiCount || 0)} free)` : "(Pro)"}`}
+                AI Scan
               </Text>
-              {!isPro && (
-                <View style={[styles.quotaBarWrapper, { width: '70%', marginTop: 4 }]}>
+
+              {!isPro ? (
+                /* Non-Pro: Gold badge with dynamic count or Upgrade text */
+                <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
+                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>
+                    {geminiCount >= MAX_SEARCHES ? "UPGRADE" : `${MAX_SEARCHES - Number(geminiCount || 0)} FREE`}
+                  </Text>
+                </View>
+              ) : (
+                /* Pro: Solid Gold Bar */
+                <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4, backgroundColor: 'rgba(184, 134, 11, 0.2)' }]}>
                   <View
                     style={[
                       styles.quotaBarFill,
                       {
-                        width: `${Math.min(100, (Number(geminiCount || 0) / MAX_SEARCHES) * 100)}%`,
-                        backgroundColor: geminiCount >= MAX_SEARCHES ? '#FF5252' : '#4CAF50'
+                        width: '100%',
+                        backgroundColor: '#B8860B'
                       }
                     ]}
                   />
@@ -1029,22 +1036,28 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               <MaterialCommunityIcons
                 name={(!isPro && geminiCount >= MAX_SEARCHES) ? "lock" : "text-search"}
                 size={22}
-                color="#B8860B"
+                color={(!isPro && geminiCount >= MAX_SEARCHES) ? "#9E9E9E" : "#B8860B"}
               />
               <Text style={styles.tripleBtnText}>
-                {(!isPro && geminiCount >= MAX_SEARCHES)
-                  ? "Upgrade"
-                  : `AI Text ${!isPro ? `(${MAX_SEARCHES - Number(geminiCount || 0)} free)` : "(Pro)"}`}
+                AI Text
               </Text>
 
-              {!isPro && (
-                <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4 }]}>
+              {!isPro ? (
+                /* Non-Pro: Show the Upgrade Badge if limit reached or simple text */
+                <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
+                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>
+                    {geminiCount >= MAX_SEARCHES ? "UPGRADE" : `${MAX_SEARCHES - Number(geminiCount || 0)} FREE`}
+                  </Text>
+                </View>
+              ) : (
+                /* Pro: Show the solid Gold Bar style */
+                <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4, backgroundColor: 'rgba(184, 134, 11, 0.2)' }]}>
                   <View
                     style={[
                       styles.quotaBarFill,
                       {
-                        width: `${Math.min(100, (Number(geminiCount || 0) / MAX_SEARCHES) * 100)}%`,
-                        backgroundColor: geminiCount >= MAX_SEARCHES ? '#FF5252' : '#4CAF50'
+                        width: '100%',
+                        backgroundColor: '#B8860B'
                       }
                     ]}
                   />
@@ -1071,7 +1084,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 color={!isPro ? "#9E9E9E" : "#B8860B"}
               />
               <Text style={styles.tripleBtnText}>
-                {isPro ? "AI Program" : "Program (Pro)"}
+                AI Plan
               </Text>
 
               {!isPro ? (
@@ -1523,7 +1536,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
             {/* --- 1. HEADER SECTION --- */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-              <Text style={styles.editTitle}>Health Program</Text>
+              <Text style={styles.editTitle}>Health Plan</Text>
 
               {/* Action Button Toggle */}
               {(dietPlan?.standardPlan || dietPlan?.trainingProgram) && !showGenerator && !isDietLoading && (
@@ -1532,7 +1545,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                   style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F5E9', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#C8E6C9' }}
                 >
                   <MaterialCommunityIcons name="cog-refresh" size={16} color="#1B4D20" />
-                  <Text style={{ marginLeft: 6, fontSize: 10, fontWeight: '900', color: '#1B4D20' }}>RE-GENERATE HEALTH PROGRAM</Text>
+                  <Text style={{ marginLeft: 6, fontSize: 10, fontWeight: '900', color: '#1B4D20' }}>CONFIGURE PLAN</Text>
                 </TouchableOpacity>
               )}
 
@@ -1542,7 +1555,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                   style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F5E9', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#C8E6C9' }}
                 >
                   <MaterialCommunityIcons name="arrow-left" size={16} color="#1B4D20" />
-                  <Text style={{ marginLeft: 6, fontSize: 10, fontWeight: '900', color: '#1B4D20' }}>BACK TO PLAN</Text>
+                  <Text style={{ marginLeft: 6, fontSize: 10, fontWeight: '900', color: '#1B4D20' }}>VIEW HEALTH PLAN</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -1569,7 +1582,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               {isDietLoading ? (
                 <View style={{ paddingVertical: 40, alignItems: 'center' }}>
                   <ActivityIndicator size="large" color="#1B4D20" />
-                  <Text style={{ marginTop: 15, fontWeight: '700', color: '#666' }}>Architecting Program...</Text>
+                  <Text style={{ marginTop: 15, fontWeight: '700', color: '#666' }}>Generating Plan...</Text>
                 </View>
               ) : (
                 <>
@@ -1649,7 +1662,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
                       <TouchableOpacity style={[styles.prominentCalcBtn, { backgroundColor: '#DAA520' }]} onPress={() => handleGeneratePlan('Both')}>
                         <MaterialCommunityIcons name="lightning-bolt" size={20} color="#FFF" />
-                        <Text style={styles.prominentCalcBtnText}>GENERATE FULL PROGRAM</Text>
+                        <Text style={styles.prominentCalcBtnText}>GENERATE FULL PLAN</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -1748,7 +1761,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                           {/* Training Summary Footer */}
                           <View style={{ backgroundColor: '#1976D2', padding: 15, borderRadius: 15, flexDirection: 'row', justifyContent: 'space-around' }}>
                             <View style={{ alignItems: 'center' }}>
-                              <Text style={{ color: '#BBDEFB', fontSize: 9 }}>PROGRAM LENGTH</Text>
+                              <Text style={{ color: '#BBDEFB', fontSize: 9 }}>PLAN LENGTH</Text>
                               <Text style={{ color: '#FFF', fontWeight: '900' }}>{dietPlan.trainingProgram.generatedDuration.toUpperCase()}</Text>
                             </View>
                             <View style={{ alignItems: 'center' }}>
@@ -1772,7 +1785,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 <Text style={{ fontWeight: '900', color: '#666' }}>CLOSE</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={saveGeneratedPlans}>
-                <Text style={{ color: '#FFF', fontWeight: '900' }}>SAVE PROGRAM</Text>
+                <Text style={{ color: '#FFF', fontWeight: '900' }}>SAVE PLAN</Text>
               </TouchableOpacity>
             </View>
 
