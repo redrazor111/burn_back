@@ -34,8 +34,7 @@ export default async function handler(req: any, res: any) {
         User Profile & Goals:
         - Target: ${userContext.targetCalories} kcal/day
         - Protein: ${userContext.targetProtein}g/day
-        - Diet Preference: ${userContext.dietPreference}
-        - Cuisines: ${userContext.cuisines}
+        - Dietary Requirements: ${userContext.dietaryRestrictions} (STRICT: Ensure all meals are 100% compliant with these dietary standards)
         - Weight: ${userContext.weight}kg
 
         STRICT DURATION RULES:
@@ -74,6 +73,7 @@ export default async function handler(req: any, res: any) {
 
         3. If a type is NOT requested, set that root key to null.
         4. All numeric values MUST be integers to the nearest whole number. Use "items" array for meals, NOT "dishes".
+        5. IMPORTANT: Ensure meal items strictly adhere to the listed "Dietary Restrictions".
 
         Return ONLY valid JSON.`
       : `Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}

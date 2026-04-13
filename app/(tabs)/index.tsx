@@ -46,7 +46,6 @@ import PremiumModal from '../../components/PremiumModal';
 import ScanHistory from '../../components/ScanHistory';
 import Shop from '../../components/Shop';
 
-import { useSubscriptionStatus } from '../../utils/subscription';
 
 import { db, silentSignIn } from '@/utils/firebaseConfig';
 import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
@@ -91,6 +90,9 @@ const GOAL_OPTIONS = [
   { label: 'Maintain', calMod: 0, protMult: 1.8 },
   { label: 'Gain Muscle', calMod: 300, protMult: 2.0 },
 ];
+
+const DIET_TYPES = ['Meat', 'Veg', 'Vegan', 'Lactose-Free', 'Gluten-Free'];
+type PlanType = 'Meal' | 'Training' | 'Both';
 
 function SummaryScreen({ onRecommendationsFound }: any) {
   const insets = useSafeAreaInsets();
@@ -152,9 +154,46 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [editCarbs, setEditCarbs] = useState('');
 
   const isInitialLoadComplete = useRef(false);
-  const { isPro } = useSubscriptionStatus();
+  // const { isPro } = useSubscriptionStatus();
+  const isPro = true;
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+
+  const [isDietModal, setIsDietModal] = useState(false);
+  // Default to Meat so the user has a valid state immediately
+  const [selectedCuisines, setSelectedCuisines] = useState<string[]>(['Meat']);
+  const [planDuration, setPlanDuration] = useState('Daily');
+
+  const [dietPlan, setDietPlan] = useState<any>(null);
+  const [isDietLoading, setIsDietLoading] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(false);
+  const [activeTab, setActiveTab] = useState<'Meals' | 'Training'>('Training');
+  const [trainingDuration, setTrainingDuration] = useState('Weekly');
+
+  // Update this function inside SummaryScreen
+  const toggleDietType = (type: string) => {
+    let updated = [...selectedCuisines];
+
+    if (updated.includes(type)) {
+      // Prevent unselecting everything (keep at least one active)
+      if (updated.length > 1) {
+        updated = updated.filter(t => t !== type);
+      }
+    } else {
+      // LOGIC: If selecting Vegan or Veg, you might want to remove 'Meat'
+      if (type === 'Vegan' || type === 'Veg') {
+        updated = updated.filter(t => t !== 'Meat');
+      }
+      // LOGIC: If selecting Meat, remove Veg/Vegan
+      if (type === 'Meat') {
+        updated = updated.filter(t => t !== 'Vegan' && t !== 'Veg');
+      }
+
+      updated.push(type);
+    }
+
+    setSelectedCuisines(updated);
+  };
 
   const handleHealthSync = async () => {
     if (!isPro) {
@@ -225,6 +264,63 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     } finally {
       setIsSyncing(false);
       refreshQuotas();
+    }
+  };
+
+  const handleGeneratePlan = async (type: PlanType) => {
+    setIsDietLoading(true);
+    try {
+      const durationToUse = type === 'Training' ? trainingDuration : planDuration;
+
+      const response = await analyzeImageWithGemini(
+        isPro,
+        {
+          gender,
+          age,
+          targetCalories,
+          targetProtein,
+          weight: Number(weight),
+          dietaryRestrictions: selectedCuisines.join(', '),
+          duration: durationToUse,
+          generateType: type
+        },
+        undefined,
+        undefined,
+        true
+      );
+
+      const parsedData = JSON.parse(response);
+
+      if (parsedData.standardPlan || parsedData.trainingProgram) {
+        setDietPlan((prev: any) => ({
+          ...prev,
+          // If the AI sent a plan, use it. If not, keep the previous one.
+          standardPlan: parsedData.standardPlan || prev?.standardPlan,
+          trainingProgram: parsedData.trainingProgram || prev?.trainingProgram,
+        }));
+        setShowGenerator(false);
+      }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (e) {
+      Alert.alert("Error", "Failed to generate plan.");
+    } finally {
+      setIsDietLoading(false);
+    }
+  };
+
+  const saveGeneratedPlans = async () => {
+    if (!userId || !dietPlan) return;
+    try {
+      await setDoc(doc(db, 'users', userId, 'profile', 'savedPlans'), {
+        dietPlan: dietPlan, // This now contains both standardPlan and trainingProgram
+        savedAt: new Date().toISOString()
+      }, { merge: true });
+
+      Alert.alert("Success", "Program saved to your profile.");
+      setIsDietModal(false);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (e) {
+      Alert.alert("Error", "Failed to save the plan.");
     }
   };
 
@@ -355,10 +451,20 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       setActivities(loadedActivities);
     }, (error) => console.error("Activities Listener Error:", error));
 
+    const unsubscribeSavedPlans = onSnapshot(doc(db, 'users', userId, 'profile', 'savedPlans'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setDietPlan(data.dietPlan || null);
+      }
+    });
     return () => {
       unsubscribeProfile();
       unsubscribeMeals();
       unsubscribeActivities();
+      unsubscribeProfile();
+      unsubscribeMeals();
+      unsubscribeActivities();
+      unsubscribeSavedPlans(); // Cleanup
     };
   }, [userId]);
 
@@ -567,9 +673,16 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     try {
       const rawResponse = await analyzeImageWithGemini(
         isPro,
-        { gender, age, targetCalories },
+        {
+          gender,
+          age,
+          targetCalories,
+          targetProtein,
+          weight
+        },
         undefined,
-        aiTextQuery
+        aiTextQuery,
+        false
       );
 
       const data = JSON.parse(rawResponse);
@@ -667,6 +780,19 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     const geminiQuotaCount = await checkQuota();
     if (!isPro && geminiQuotaCount === 'LIMIT_REACHED') setShowPremium(true);
     else navigation.navigate('AI Scan');
+  };
+
+  const fetchSavedPlan = async () => {
+    if (!userId) return;
+    const planRef = doc(db, 'users', userId, 'profile', 'savedPlans');
+    const planSnap = await getDoc(planRef);
+
+    if (planSnap.exists()) {
+      const data = planSnap.data();
+      setDietPlan(data.dietPlan || null);
+    } else {
+      setDietPlan(null);
+    }
   };
 
   const confirmSelection = async (option: { name: string; calories: number; protein: number; carbs: number }) => {
@@ -910,6 +1036,47 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                       {
                         width: `${Math.min(100, (Number(geminiCount || 0) / MAX_SEARCHES) * 100)}%`,
                         backgroundColor: geminiCount >= MAX_SEARCHES ? '#FF5252' : '#4CAF50'
+                      }
+                    ]}
+                  />
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* AI PROGRAM BUTTON */}
+            <TouchableOpacity
+              style={[styles.quadBtn, !isPro && styles.logActivityBtnLocked]}
+              onPress={() => {
+                if (!isPro) {
+                  setShowPremium(true);
+                } else {
+                  setShowGenerator(false);
+                  fetchSavedPlan();
+                  setIsDietModal(true);
+                }
+              }}
+            >
+              <MaterialCommunityIcons
+                name={!isPro ? "lock" : "shield-star"}
+                size={22}
+                color={!isPro ? "#9E9E9E" : "#B8860B"}
+              />
+              <Text style={styles.tripleBtnText}>
+                {isPro ? "AI Program" : "Program (Pro)"}
+              </Text>
+
+              {!isPro ? (
+                <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
+                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>UPGRADE</Text>
+                </View>
+              ) : (
+                <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4, backgroundColor: 'rgba(184, 134, 11, 0.2)' }]}>
+                  <View
+                    style={[
+                      styles.quotaBarFill,
+                      {
+                        width: '100%',
+                        backgroundColor: '#B8860B'
                       }
                     ]}
                   />
@@ -1340,6 +1507,234 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           </View>
         </View>
       )}
+
+      <Modal visible={isDietModal} transparent animationType="slide">
+        <View style={styles.editOverlay}>
+          <View style={[styles.androidSelectionBox, { width: '96%' }]}>
+
+            {/* --- 1. HEADER SECTION --- */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+              <Text style={styles.editTitle}>Health Program</Text>
+
+              {/* Action Button Toggle */}
+              {(dietPlan?.standardPlan || dietPlan?.trainingProgram) && !showGenerator && !isDietLoading && (
+                <TouchableOpacity
+                  onPress={() => setShowGenerator(true)}
+                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F5E9', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#C8E6C9' }}
+                >
+                  <MaterialCommunityIcons name="cog-refresh" size={16} color="#1B4D20" />
+                  <Text style={{ marginLeft: 6, fontSize: 10, fontWeight: '900', color: '#1B4D20' }}>RE-GENERATE HEALTH PROGRAM</Text>
+                </TouchableOpacity>
+              )}
+
+              {showGenerator && (dietPlan?.standardPlan || dietPlan?.trainingProgram) && (
+                <TouchableOpacity
+                  onPress={() => setShowGenerator(false)}
+                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F5E9', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#C8E6C9' }}
+                >
+                  <MaterialCommunityIcons name="arrow-left" size={16} color="#1B4D20" />
+                  <Text style={{ marginLeft: 6, fontSize: 10, fontWeight: '900', color: '#1B4D20' }}>BACK TO PLAN</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* --- 2. TAB NAVIGATION --- */}
+            {(dietPlan?.standardPlan || dietPlan?.trainingProgram) && !showGenerator && !isDietLoading && (
+              <View style={[styles.genderPicker, { marginBottom: 15, backgroundColor: '#F0F0F0' }]}>
+                <TouchableOpacity
+                  onPress={() => setActiveTab('Training')}
+                  style={[styles.genderBtn, activeTab === 'Training' && styles.genderBtnActive]}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '900', color: activeTab === 'Training' ? '#2196F3' : '#999' }}>TRAINING</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setActiveTab('Meals')}
+                  style={[styles.genderBtn, activeTab === 'Meals' && styles.genderBtnActive]}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '900', color: activeTab === 'Meals' ? '#1B4D20' : '#999' }}>MEAL PLAN</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 600 }}>
+              {isDietLoading ? (
+                <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                  <ActivityIndicator size="large" color="#1B4D20" />
+                  <Text style={{ marginTop: 15, fontWeight: '700', color: '#666' }}>Architecting Program...</Text>
+                </View>
+              ) : (
+                <>
+                  {/* --- 3. CONFIGURATION VIEW (Generator) --- */}
+                  {(showGenerator || (!dietPlan?.standardPlan && !dietPlan?.trainingProgram)) ? (
+                    <View>
+                      {/* Training Settings */}
+                      <View style={{ backgroundColor: '#F0F7FF', padding: 12, borderRadius: 15, marginBottom: 10, borderWidth: 1, borderColor: '#E3F2FD' }}>
+                        <Text style={[styles.sectionLabel, { color: '#1976D2', marginBottom: 8 }]}>Training Settings</Text>
+                        <Text style={styles.inputLabel}>Duration</Text>
+                        <View style={[styles.genderPicker, { marginBottom: 12 }]}>
+                          {['Daily', 'Weekly'].map(d => (
+                            <TouchableOpacity key={d} onPress={() => setTrainingDuration(d)} style={[styles.genderBtn, trainingDuration === d && styles.genderBtnActive]}>
+                              <Text style={{ fontSize: 10, fontWeight: '800', color: trainingDuration === d ? '#1976D2' : '#999' }}>{d}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                        <TouchableOpacity style={[styles.modalBtn, styles.saveBtn, { width: '100%', backgroundColor: '#2196F3', height: 45 }]} onPress={() => handleGeneratePlan('Training')}>
+                          <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 13 }}>GENERATE TRAINING</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Meal Settings */}
+                      <View style={{ backgroundColor: '#F9F9F9', padding: 12, borderRadius: 15, marginBottom: 15, borderWidth: 1, borderColor: '#EEE' }}>
+                        <Text style={[styles.sectionLabel, { color: '#1B4D20', marginBottom: 8 }]}>Meal Plan Settings</Text>
+                        <Text style={styles.inputLabel}>Duration</Text>
+                        <View style={[styles.genderPicker, { marginBottom: 12 }]}>
+                          {['Daily', 'Weekly'].map(d => (
+                            <TouchableOpacity key={d} onPress={() => setPlanDuration(d)} style={[styles.genderBtn, planDuration === d && styles.genderBtnActive]}>
+                              <Text style={{ fontSize: 10, fontWeight: '800', color: planDuration === d ? '#1B4D20' : '#999' }}>{d}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+
+                        {/* Find this section inside the Meal Settings View of the Modal */}
+                        <Text style={styles.inputLabel}>Dietary Preferences</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 15 }}>
+                          {DIET_TYPES.map(type => {
+                            const isSelected = selectedCuisines.includes(type);
+                            return (
+                              <TouchableOpacity
+                                key={type}
+                                onPress={() => toggleDietType(type)}
+                                style={[
+                                  styles.gridItem,
+                                  {
+                                    width: '30%',
+                                    height: 38,
+                                    margin: 4,
+                                    backgroundColor: isSelected ? '#1B4D20' : '#FFF',
+                                    borderColor: isSelected ? '#1B4D20' : '#E0E0E0'
+                                  }
+                                ]}
+                              >
+                                <Text style={{
+                                  fontSize: 8,
+                                  fontWeight: '800',
+                                  color: isSelected ? '#FFF' : '#1B4D20'
+                                }}>
+                                  {type.toUpperCase()}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+
+                        <TouchableOpacity style={[styles.modalBtn, styles.saveBtn, { width: '100%', backgroundColor: '#4CAF50', height: 45 }]} onPress={() => handleGeneratePlan('Meal')}>
+                          <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 13 }}>GENERATE MEALS</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <TouchableOpacity style={[styles.prominentCalcBtn, { backgroundColor: '#DAA520' }]} onPress={() => handleGeneratePlan('Both')}>
+                        <MaterialCommunityIcons name="lightning-bolt" size={20} color="#FFF" />
+                        <Text style={styles.prominentCalcBtnText}>GENERATE FULL PROGRAM</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    /* --- 4. RESULTS VIEW --- */
+                    <View>
+                      {activeTab === 'Meals' ? (
+                        /* --- MEALS VIEW --- */
+                        <View>
+                          {dietPlan?.standardPlan?.meals?.map((meal: any, idx: number) => {
+                            const mealItems = meal.items || meal.dishes || [];
+                            return (
+                              <View key={idx} style={[styles.collapsibleCard, { marginBottom: 15, borderColor: '#E8F5E9' }]}>
+                                <View style={{ backgroundColor: '#F1F8E9', padding: 10, borderBottomWidth: 1, borderBottomColor: '#E8F5E9', flexDirection: 'row', justifyContent: 'space-between' }}>
+                                  <Text style={{ fontWeight: '900', color: '#1B4D20', fontSize: 12 }}>{meal.mealName.toUpperCase()}</Text>
+                                  <Text style={{ fontWeight: '700', color: '#2E7D32', fontSize: 11 }}>{meal.mealCalories || ""} kcal</Text>
+                                </View>
+
+                                <View style={{ padding: 12 }}>
+                                  {mealItems.length > 0 ? mealItems.map((item: any, i: number) => (
+                                    <View key={i} style={{ marginBottom: 8, borderBottomWidth: i === mealItems.length - 1 ? 0 : 1, borderBottomColor: '#F5F5F5', paddingBottom: 5 }}>
+                                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                        <Text style={{ fontWeight: '700', fontSize: 13 }}>{item.itemName || item.dishName || "Item"}</Text>
+                                        <Text style={{ fontSize: 11, color: '#1B4D20', fontWeight: 'bold' }}>{item.quantity || ""}</Text>
+                                      </View>
+                                      <Text style={{ fontSize: 11, color: '#666' }}>{item.calories} cal • {item.protein}g protein</Text>
+                                    </View>
+                                  )) : <Text style={{ fontSize: 12, color: '#999', fontStyle: 'italic' }}>No item details provided.</Text>}
+                                </View>
+                              </View>
+                            );
+                          })}
+
+                          {/* Daily Meal Totals */}
+                          <View style={{ backgroundColor: '#1B4D20', padding: 15, borderRadius: 15, flexDirection: 'row', justifyContent: 'space-around' }}>
+                            <View style={{ alignItems: 'center' }}>
+                              <Text style={{ color: '#A5D6A7', fontSize: 9 }}>TOTAL CALORIES</Text>
+                              <Text style={{ color: '#FFF', fontWeight: '900' }}>{dietPlan.standardPlan.totalCalories}</Text>
+                            </View>
+                            <View style={{ alignItems: 'center' }}>
+                              <Text style={{ color: '#A5D6A7', fontSize: 9 }}>TOTAL PROTEIN</Text>
+                              <Text style={{ color: '#FFF', fontWeight: '900' }}>{dietPlan.standardPlan.totalProtein || 0}g</Text>
+                            </View>
+                          </View>
+                        </View>
+                      ) : (
+                        /* --- TRAINING VIEW (Mirrors Meals Look) --- */
+                        <View>
+                          {dietPlan?.trainingProgram?.days?.map((day: any, idx: number) => (
+                            <View key={idx} style={[styles.collapsibleCard, { marginBottom: 15, borderColor: '#E3F2FD' }]}>
+                              {/* Header Bar tinted Blue to match Training theme */}
+                              <View style={{ backgroundColor: '#F0F7FF', padding: 10, borderBottomWidth: 1, borderBottomColor: '#E3F2FD', flexDirection: 'row', justifyContent: 'space-between' }}>
+                                <Text style={{ fontWeight: '900', color: '#1976D2', fontSize: 12 }}>{day.dayName.toUpperCase()}</Text>
+                                <Text style={{ fontWeight: '700', color: '#1E88E5', fontSize: 11 }}>{day.title || "Workout"}</Text>
+                              </View>
+
+                              <View style={{ padding: 12 }}>
+                                {day.exercises.length > 0 ? day.exercises.map((ex: string, i: number) => (
+                                  <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8, borderBottomWidth: i === day.exercises.length - 1 ? 0 : 1, borderBottomColor: '#F5F5F7', paddingBottom: 5 }}>
+                                    <MaterialCommunityIcons name="check-circle-outline" size={16} color="#4CAF50" style={{ marginTop: 2, marginRight: 8 }} />
+                                    <Text style={{ flex: 1, fontSize: 13, color: '#333', lineHeight: 18 }}>{ex}</Text>
+                                  </View>
+                                )) : <Text style={{ fontSize: 12, color: '#999', fontStyle: 'italic' }}>Rest Day</Text>}
+                              </View>
+                            </View>
+                          ))}
+
+                          {/* Training Summary Footer (Matches Meals Footer Style) */}
+                          <View style={{ backgroundColor: '#1976D2', padding: 15, borderRadius: 15, flexDirection: 'row', justifyContent: 'space-around' }}>
+                            <View style={{ alignItems: 'center' }}>
+                              <Text style={{ color: '#BBDEFB', fontSize: 9 }}>PROGRAM LENGTH</Text>
+                              <Text style={{ color: '#FFF', fontWeight: '900' }}>{dietPlan.trainingProgram.generatedDuration.toUpperCase()}</Text>
+                            </View>
+                            <View style={{ alignItems: 'center' }}>
+                              <Text style={{ color: '#BBDEFB', fontSize: 9 }}>SESSIONS</Text>
+                              <Text style={{ color: '#FFF', fontWeight: '900' }}>
+                                {dietPlan.trainingProgram.days.filter((d: any) => d.title.toLowerCase() !== 'rest').length} Active
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </>
+              )}
+            </ScrollView>
+
+            {/* --- 5. FOOTER ACTIONS --- */}
+            <View style={styles.editActions}>
+              <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => { setIsDietModal(false); setShowGenerator(false); }}>
+                <Text style={{ fontWeight: '900', color: '#666' }}>CLOSE</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={saveGeneratedPlans}>
+                <Text style={{ color: '#FFF', fontWeight: '900' }}>SAVE PROGRAM</Text>
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        </View>
+      </Modal>
 
       {/* GUIDE POP-UP MODAL */}
       <Modal visible={showGuide} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowGuide(false)}>
