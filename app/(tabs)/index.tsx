@@ -1,7 +1,7 @@
 /* eslint-disable react/no-unescaped-entities */
 import React, { ComponentProps, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, // Added for Health Check
+  ActivityIndicator,
   Alert,
   Keyboard,
   Modal,
@@ -50,6 +50,7 @@ import Shop from '../../components/Shop';
 import { db, silentSignIn } from '@/utils/firebaseConfig';
 import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 
+import { useSubscriptionStatus } from '@/utils/subscription';
 import { MAX_ACTIVITIES, MAX_MEALS, MAX_SEARCHES } from '../../utils/constants';
 
 const Tab = createMaterialTopTabNavigator();
@@ -91,7 +92,9 @@ const GOAL_OPTIONS = [
   { label: 'Gain Muscle', calMod: 300, protMult: 2.0 },
 ];
 
-const DIET_TYPES = ['Meat', 'Veg', 'Vegan', 'Lactose-Free', 'Gluten-Free'];
+const DIET_TYPES = ['Meat', 'Veg', 'Vegan', 'Pescatarian', 'Keto',
+  'Lactose-Free', 'Gluten-Free', 'Nut-Free', 'Soy-Free',
+  'Low-Carb'];
 type PlanType = 'Meal' | 'Training' | 'Both';
 
 function SummaryScreen({ onRecommendationsFound }: any) {
@@ -154,8 +157,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [editCarbs, setEditCarbs] = useState('');
 
   const isInitialLoadComplete = useRef(false);
-  // const { isPro } = useSubscriptionStatus();
-  const isPro = true;
+  let { isPro } = useSubscriptionStatus();
+  isPro = true;
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
 
@@ -168,7 +171,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const [isDietLoading, setIsDietLoading] = useState(false);
   const [showGenerator, setShowGenerator] = useState(false);
   const [activeTab, setActiveTab] = useState<'Meals' | 'Training'>('Training');
-  const [trainingDuration, setTrainingDuration] = useState('Weekly');
+  const [trainingDuration, setTrainingDuration] = useState('Daily');
 
   // Update this function inside SummaryScreen
   const toggleDietType = (type: string) => {
@@ -270,7 +273,12 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const handleGeneratePlan = async (type: PlanType) => {
     setIsDietLoading(true);
     try {
-      const durationToUse = type === 'Training' ? trainingDuration : planDuration;
+      let durationToUse = planDuration;
+      if (type === 'Training') {
+        durationToUse = trainingDuration;
+      } else if (type === 'Both') {
+        durationToUse = trainingDuration;
+      }
 
       const response = await analyzeImageWithGemini(
         isPro,
@@ -294,11 +302,14 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       if (parsedData.standardPlan || parsedData.trainingProgram) {
         setDietPlan((prev: any) => ({
           ...prev,
-          // If the AI sent a plan, use it. If not, keep the previous one.
           standardPlan: parsedData.standardPlan || prev?.standardPlan,
           trainingProgram: parsedData.trainingProgram || prev?.trainingProgram,
         }));
         setShowGenerator(false);
+
+        // Auto-switch tab to the generated type so the user sees it immediately
+        if (type === 'Training') setActiveTab('Training');
+        if (type === 'Meal') setActiveTab('Meals');
       }
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
@@ -312,11 +323,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     if (!userId || !dietPlan) return;
     try {
       await setDoc(doc(db, 'users', userId, 'profile', 'savedPlans'), {
-        dietPlan: dietPlan, // This now contains both standardPlan and trainingProgram
+        dietPlan: dietPlan,
         savedAt: new Date().toISOString()
       }, { merge: true });
 
-      Alert.alert("Success", "Program saved to your profile.");
       setIsDietModal(false);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
@@ -1596,7 +1606,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                         </View>
 
                         {/* Find this section inside the Meal Settings View of the Modal */}
-                        <Text style={styles.inputLabel}>Dietary Preferences</Text>
+                        <Text style={styles.inputLabel}>Dietary Preferences - (Select Multiple)</Text>
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 15 }}>
                           {DIET_TYPES.map(type => {
                             const isSelected = selectedCuisines.includes(type);
@@ -1607,19 +1617,25 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                                 style={[
                                   styles.gridItem,
                                   {
-                                    width: '30%',
+                                    width: '18%',
                                     height: 38,
-                                    margin: 4,
+                                    margin: 2,
+                                    paddingHorizontal: 2,
                                     backgroundColor: isSelected ? '#1B4D20' : '#FFF',
                                     borderColor: isSelected ? '#1B4D20' : '#E0E0E0'
                                   }
                                 ]}
                               >
-                                <Text style={{
-                                  fontSize: 8,
-                                  fontWeight: '800',
-                                  color: isSelected ? '#FFF' : '#1B4D20'
-                                }}>
+                                <Text
+                                  numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                  style={{
+                                    fontSize: 7,
+                                    fontWeight: '800',
+                                    color: isSelected ? '#FFF' : '#1B4D20',
+                                    textAlign: 'center'
+                                  }}
+                                >
                                   {type.toUpperCase()}
                                 </Text>
                               </TouchableOpacity>
@@ -1641,50 +1657,79 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                     /* --- 4. RESULTS VIEW --- */
                     <View>
                       {activeTab === 'Meals' ? (
-                        /* --- MEALS VIEW --- */
                         <View>
-                          {dietPlan?.standardPlan?.meals?.map((meal: any, idx: number) => {
-                            const mealItems = meal.items || meal.dishes || [];
-                            return (
-                              <View key={idx} style={[styles.collapsibleCard, { marginBottom: 15, borderColor: '#E8F5E9' }]}>
-                                <View style={{ backgroundColor: '#F1F8E9', padding: 10, borderBottomWidth: 1, borderBottomColor: '#E8F5E9', flexDirection: 'row', justifyContent: 'space-between' }}>
-                                  <Text style={{ fontWeight: '900', color: '#1B4D20', fontSize: 12 }}>{meal.mealName.toUpperCase()}</Text>
-                                  <Text style={{ fontWeight: '700', color: '#2E7D32', fontSize: 11 }}>{meal.mealCalories || ""} kcal</Text>
+                          {dietPlan?.standardPlan?.days?.map((day: any, dayIdx: number) => (
+                            <View key={dayIdx} style={{ marginBottom: 25 }}>
+                              {/* Day Header - Only shown if more than 1 day exists */}
+                              {dietPlan.standardPlan.days.length > 1 && (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingHorizontal: 5 }}>
+                                  <MaterialCommunityIcons name="calendar-today" size={16} color="#1B4D20" />
+                                  <Text style={{ marginLeft: 8, fontWeight: '900', color: '#1B4D20', fontSize: 14, letterSpacing: 0.5 }}>
+                                    {day.dayName.toUpperCase()}
+                                  </Text>
                                 </View>
+                              )}
 
-                                <View style={{ padding: 12 }}>
-                                  {mealItems.length > 0 ? mealItems.map((item: any, i: number) => (
-                                    <View key={i} style={{ marginBottom: 8, borderBottomWidth: i === mealItems.length - 1 ? 0 : 1, borderBottomColor: '#F5F5F5', paddingBottom: 5 }}>
-                                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                        <Text style={{ fontWeight: '700', fontSize: 13 }}>{item.itemName || item.dishName || "Item"}</Text>
-                                        <Text style={{ fontSize: 11, color: '#1B4D20', fontWeight: 'bold' }}>{item.quantity || ""}</Text>
-                                      </View>
-                                      <Text style={{ fontSize: 11, color: '#666' }}>{item.calories} cal • {item.protein}g protein</Text>
+                              {day.meals?.map((meal: any, idx: number) => {
+                                const mealItems = meal.items || [];
+                                return (
+                                  <View key={idx} style={[styles.collapsibleCard, { marginBottom: 15, borderColor: '#E8F5E9' }]}>
+                                    {/* Meal Header */}
+                                    <View style={{ backgroundColor: '#F1F8E9', padding: 10, borderBottomWidth: 1, borderBottomColor: '#E8F5E9', flexDirection: 'row', justifyContent: 'space-between' }}>
+                                      <Text style={{ fontWeight: '900', color: '#1B4D20', fontSize: 12 }}>{meal.mealName.toUpperCase()}</Text>
+                                      <Text style={{ fontWeight: '700', color: '#2E7D32', fontSize: 11 }}>{meal.mealCalories} kcal</Text>
                                     </View>
-                                  )) : <Text style={{ fontSize: 12, color: '#999', fontStyle: 'italic' }}>No item details provided.</Text>}
-                                </View>
-                              </View>
-                            );
-                          })}
 
-                          {/* Daily Meal Totals */}
-                          <View style={{ backgroundColor: '#1B4D20', padding: 15, borderRadius: 15, flexDirection: 'row', justifyContent: 'space-around' }}>
+                                    {/* Meal Items List */}
+                                    <View style={{ padding: 12 }}>
+                                      {mealItems.length > 0 ? mealItems.map((item: any, i: number) => (
+                                        <View key={i} style={{ marginBottom: 8, borderBottomWidth: i === mealItems.length - 1 ? 0 : 1, borderBottomColor: '#F5F5F5', paddingBottom: 5 }}>
+                                          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                            <Text style={{ fontWeight: '700', fontSize: 13 }}>{item.itemName}</Text>
+                                            <Text style={{ fontSize: 11, color: '#1B4D20', fontWeight: 'bold' }}>{item.quantity}</Text>
+                                          </View>
+                                          <Text style={{ fontSize: 11, color: '#666' }}>{item.calories} cal • {item.protein}g protein</Text>
+                                        </View>
+                                      )) : <Text style={{ fontSize: 12, color: '#999', fontStyle: 'italic' }}>No item details.</Text>}
+                                    </View>
+                                  </View>
+                                );
+                              })}
+
+                              {/* Individual Day Totals Badge */}
+                              <View style={{ backgroundColor: '#E8F5E9', padding: 8, borderRadius: 10, alignSelf: 'flex-end', marginBottom: 10 }}>
+                                <Text style={{ fontSize: 10, color: '#1B4D20', fontWeight: '800' }}>
+                                  DAY TOTAL: {day.totalCalories} kcal • {day.totalProtein}g Pro
+                                </Text>
+                              </View>
+                            </View>
+                          ))}
+
+                          {/* Program Summary Footer */}
+                          <View style={{ backgroundColor: '#1B4D20', padding: 15, borderRadius: 15, flexDirection: 'row', justifyContent: 'space-around', marginTop: 10 }}>
                             <View style={{ alignItems: 'center' }}>
-                              <Text style={{ color: '#A5D6A7', fontSize: 9 }}>TOTAL CALORIES</Text>
-                              <Text style={{ color: '#FFF', fontWeight: '900' }}>{dietPlan.standardPlan.totalCalories}</Text>
+                              <Text style={{ color: '#A5D6A7', fontSize: 9 }}>DURATION</Text>
+                              {/* Added optional chaining ?. */}
+                              <Text style={{ color: '#FFF', fontWeight: '900' }}>
+                                {dietPlan?.standardPlan?.generatedDuration?.toUpperCase() || "N/A"}
+                              </Text>
                             </View>
                             <View style={{ alignItems: 'center' }}>
-                              <Text style={{ color: '#A5D6A7', fontSize: 9 }}>TOTAL PROTEIN</Text>
-                              <Text style={{ color: '#FFF', fontWeight: '900' }}>{dietPlan.standardPlan.totalProtein || 0}g</Text>
+                              <Text style={{ color: '#A5D6A7', fontSize: 9 }}>AVG CALORIES</Text>
+                              <Text style={{ color: '#FFF', fontWeight: '900' }}>
+                                {dietPlan?.standardPlan?.days
+                                  ? Math.round(dietPlan.standardPlan.days.reduce((acc: number, d: any) => acc + (d.totalCalories || 0), 0) / (dietPlan.standardPlan.days.length || 1))
+                                  : 0
+                                }
+                              </Text>
                             </View>
                           </View>
                         </View>
                       ) : (
-                        /* --- TRAINING VIEW (Mirrors Meals Look) --- */
+                        /* --- TRAINING VIEW --- */
                         <View>
                           {dietPlan?.trainingProgram?.days?.map((day: any, idx: number) => (
                             <View key={idx} style={[styles.collapsibleCard, { marginBottom: 15, borderColor: '#E3F2FD' }]}>
-                              {/* Header Bar tinted Blue to match Training theme */}
                               <View style={{ backgroundColor: '#F0F7FF', padding: 10, borderBottomWidth: 1, borderBottomColor: '#E3F2FD', flexDirection: 'row', justifyContent: 'space-between' }}>
                                 <Text style={{ fontWeight: '900', color: '#1976D2', fontSize: 12 }}>{day.dayName.toUpperCase()}</Text>
                                 <Text style={{ fontWeight: '700', color: '#1E88E5', fontSize: 11 }}>{day.title || "Workout"}</Text>
@@ -1701,7 +1746,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                             </View>
                           ))}
 
-                          {/* Training Summary Footer (Matches Meals Footer Style) */}
+                          {/* Training Summary Footer */}
                           <View style={{ backgroundColor: '#1976D2', padding: 15, borderRadius: 15, flexDirection: 'row', justifyContent: 'space-around' }}>
                             <View style={{ alignItems: 'center' }}>
                               <Text style={{ color: '#BBDEFB', fontSize: 9 }}>PROGRAM LENGTH</Text>

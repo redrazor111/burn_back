@@ -46,12 +46,10 @@ export const silentSignIn = async () => {
     }
 
     if (auth.currentUser) {
-      console.log("✅ Existing user found:", auth.currentUser.uid);
       return auth.currentUser.uid;
     }
 
     const userCredential = await signInAnonymously(auth);
-    console.log("🆕 New anonymous user created:", userCredential.user.uid);
     return userCredential.user.uid;
   } catch (error) {
     console.error("Auth Error", error);

@@ -34,7 +34,6 @@ export const analyzeImageWithGemini = async (
     if (!response.ok) throw new Error(`Server responded with ${response.status}`);
 
     const data = await response.json();
-    console.log(JSON.stringify(data))
     return JSON.stringify(data);
   } catch (error: any) {
     console.error("Frontend Service Error:", error);

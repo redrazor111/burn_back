@@ -9,11 +9,8 @@ export function useSubscriptionStatus() {
   useEffect(() => {
     const checkProStatus = (info: CustomerInfo) => {
       const entitlementId = 'softywareai Pro';
-
       const isEntitled = info.entitlements.active[entitlementId]?.isActive ?? false;
-
       setIsPro(isEntitled);
-      console.log(`Subscription Status: ${isEntitled ? 'PRO' : 'FREE'}`);
     };
 
     const setupAndCheckStatus = async () => {
