@@ -34,32 +34,37 @@ export default async function handler(req: any, res: any) {
         User Profile & Goals:
         - Target: ${userContext.targetCalories} kcal/day
         - Protein: ${userContext.targetProtein}g/day
-        - Dietary Requirements: ${userContext.dietaryRestrictions} (STRICT: Ensure all meals are 100% compliant with these dietary standards)
+        - Dietary Requirements: ${userContext.dietaryRestrictions} (STRICT: All meals must be 100% compliant)
         - Weight: ${userContext.weight}kg
 
         STRICT DURATION RULES:
-        1. If duration is "Daily": The "days" array in trainingProgram MUST contain exactly 1 day.
-        2. If duration is "Weekly": The "days" array in trainingProgram MUST contain exactly 7 days.
+        1. If duration is "Daily": Both "standardPlan.days" and "trainingProgram.days" MUST contain exactly 1 day.
+        2. If duration is "Weekly": Both "standardPlan.days" and "trainingProgram.days" MUST contain exactly 7 days.
 
         STRICT JSON STRUCTURE INSTRUCTIONS:
-        1. If 'Meal' or 'Both': Return "standardPlan" following this schema:
+        1. If 'Meal' or 'Both': Return "standardPlan":
           {
             "generatedDuration": "${userContext.duration}",
-            "totalCalories": number,
-            "totalProtein": number,
-            "meals": [
+            "days": [
               {
-                "mealName": string,
-                "mealCalories": number,
-                "mealProtein": number,
-                "items": [
-                  { "itemName": string, "quantity": string, "calories": number, "protein": number }
+                "dayName": "Day X",
+                "totalCalories": number,
+                "totalProtein": number,
+                "meals": [
+                  {
+                    "mealName": string,
+                    "mealCalories": number,
+                    "mealProtein": number,
+                    "items": [
+                      { "itemName": string, "quantity": string, "calories": number, "protein": number }
+                    ]
+                  }
                 ]
               }
             ]
           }
 
-        2. If 'Training' or 'Both': Return "trainingProgram" following this schema:
+        2. If 'Training' or 'Both': Return "trainingProgram":
           {
             "generatedDuration": "${userContext.duration}",
             "days": [
@@ -72,8 +77,7 @@ export default async function handler(req: any, res: any) {
           }
 
         3. If a type is NOT requested, set that root key to null.
-        4. All numeric values MUST be integers to the nearest whole number. Use "items" array for meals, NOT "dishes".
-        5. IMPORTANT: Ensure meal items strictly adhere to the listed "Dietary Restrictions".
+        4. All numeric values MUST be integers. Use "items" array for meals, NOT "dishes".
 
         Return ONLY valid JSON.`
       : `Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}
