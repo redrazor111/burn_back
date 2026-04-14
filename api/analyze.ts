@@ -56,7 +56,7 @@ export default async function handler(req: any, res: any) {
                     "mealCalories": number,
                     "mealProtein": number,
                     "items": [
-                      { "itemName": string, "quantity": string, "calories": number, "protein": number }
+                      { "itemName": string, "quantity": string, "calories": number, "protein": number, "carbs": number }
                     ]
                   }
                 ]
@@ -71,13 +71,21 @@ export default async function handler(req: any, res: any) {
               {
                 "dayName": "Day X",
                 "title": string,
-                "exercises": string[]
+                "exercises": [
+                  {
+                    "name": string,
+                    "sets": string,
+                    "reps": string,
+                    "caloriesBurned": number
+                  }
+                ]
               }
             ]
           }
 
         3. If a type is NOT requested, set that root key to null.
         4. All numeric values MUST be integers. Use "items" array for meals, NOT "dishes".
+        5. For exercises, provide a realistic "caloriesBurned" integer based on the user's weight (${userContext.weight}kg) and the specific movement.
 
         Return ONLY valid JSON.`
       : `Analyze ${sourceDescription}. ${textQuery ? `User specifically described: "${textQuery}"` : ""}
