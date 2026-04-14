@@ -160,6 +160,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   const { isPro } = useSubscriptionStatus();
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+  const [expandedMealDays, setExpandedMealDays] = useState<number[]>([0]);
+  const [expandedTrainingDays, setExpandedTrainingDays] = useState<number[]>([0]);
 
   const [isDietModal, setIsDietModal] = useState(false);
   // Default to Meat so the user has a valid state immediately
@@ -345,6 +347,16 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     setGeminiCount(gCount);
     setActivityQuotaCount(aQ);
     setGeminiQuotaCount(gStatus);
+  };
+
+  const toggleDay = (
+    idx: number,
+    state: number[],
+    setter: React.Dispatch<React.SetStateAction<number[]>>
+  ) => {
+    setter(prev =>
+      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+    );
   };
 
   useEffect(() => {
@@ -611,6 +623,83 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     setIsEditingSelection(true); // Re-use the existing modal logic
   };
 
+  const quickAddMeal = async (data: any) => {
+    if (!userId) return;
+
+    try {
+      if (data.items && Array.isArray(data.items)) {
+        const batchPromises = data.items.map((item: any) =>
+          addDoc(collection(db, 'users', userId, 'meals'), {
+            productName: item.itemName,
+            calories: item.calories || 0,
+            protein: item.protein || 0,
+            carbs: item.carbs || 0,
+            isManual: false,
+            date: new Date().toISOString(),
+            createdAt: serverTimestamp(),
+          })
+        );
+
+        await Promise.all(batchPromises);
+        Alert.alert("Added", `All items from ${data.mealName} added.`);
+      }
+      else {
+        await addDoc(collection(db, 'users', userId, 'meals'), {
+          productName: data.itemName,
+          calories: data.calories || 0,
+          protein: data.protein || 0,
+          carbs: data.carbs || 0,
+          isManual: false,
+          date: new Date().toISOString(),
+          createdAt: serverTimestamp(),
+        });
+        Alert.alert("Added", `${data.itemName} added to intake.`);
+      }
+
+      refreshQuotas();
+    } catch (e) {
+      Alert.alert("Error", "Could not log food.");
+    }
+  };
+
+  const quickAddTraining = async (data: any) => {
+    if (!userId) return;
+
+    try {
+      if (data.exercises && Array.isArray(data.exercises)) {
+        const totalDayBurn = data.exercises.reduce((sum: number, ex: any) => sum + (ex.caloriesBurned || 0), 0);
+
+        await addDoc(collection(db, 'users', userId, 'activities'), {
+          type: data.title || "Workout Session",
+          icon: "arm-flex",
+          duration: 45, // Default for a full session
+          caloriesBurned: totalDayBurn,
+          date: new Date().toISOString(),
+          createdAt: serverTimestamp(),
+          isGroupedSession: true // Metadata to distinguish from single moves
+        });
+
+        Alert.alert("Added", `Entire ${data.title} session logged.`);
+      }
+      else if (data.name) {
+        await addDoc(collection(db, 'users', userId, 'activities'), {
+          type: data.name,
+          icon: "arm-flex",
+          duration: 10, // Default for single exercise
+          caloriesBurned: data.caloriesBurned || 0,
+          date: new Date().toISOString(),
+          createdAt: serverTimestamp(),
+        });
+
+        Alert.alert("Added", `${data.name} added to activities.`);
+      }
+      refreshQuotas();
+    } catch (e) {
+      console.error("Error logging training: ", e);
+      Alert.alert("Error", "Could not save activity.");
+    }
+  };
+
   const handleEditActivity = (act: any) => {
     setEditingActivityId(act.id);
     const match = ACTIVITY_TYPES.find(a => a.label === act.type) || ACTIVITY_TYPES[0];
@@ -874,22 +963,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         <View style={styles.headerTopRow}>
           <Text style={styles.title}>Daily Dashboard</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity
-              onPress={() => {
-                if (!isPro) {
-                  setShowPremium(true);
-                } else {
-                  setIsHealthModalVisible(true);
-                }
-              }}
-              style={styles.actionBtn}
-            >
-              <MaterialCommunityIcons
-                name="google-fit"
-                size={28}
-                color={autoSyncEnabled ? "#FFD700" : "#B8860B"}
-              />
-            </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
               <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />
             </TouchableOpacity>
@@ -991,6 +1064,34 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               <Text style={styles.tripleBtnText}>{(!isPro && activityQuotaCount >= MAX_ACTIVITIES) ? `Upgrade` : "Activity"}</Text>
             </TouchableOpacity>
 
+            {/* HEALTH SYNC (New Premium Button) */}
+            <TouchableOpacity
+              style={[styles.quadBtn, !isPro && styles.logActivityBtnLocked]}
+              onPress={() => {
+                if (!isPro) {
+                  setShowPremium(true);
+                } else {
+                  setIsHealthModalVisible(true);
+                }
+              }}
+            >
+              <MaterialCommunityIcons
+                name={!isPro ? "lock" : "google-fit"}
+                size={22}
+                color={!isPro ? "#9E9E9E" : "#B8860B"}
+              />
+              <Text style={[styles.tripleBtnText]}>Sync</Text>
+              {!isPro ? (
+                <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
+                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>PRO</Text>
+                </View>
+              ) : (
+                <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4, backgroundColor: 'rgba(25, 118, 210, 0.2)' }]}>
+                  <View style={[styles.quotaBarFill, { width: '100%', backgroundColor: '#B8860B' }]} />
+                </View>
+              )}
+            </TouchableOpacity>
+
             {/* AI SCAN */}
             <TouchableOpacity
               style={[styles.quadBtn, (!isPro && geminiCount >= MAX_SEARCHES) && styles.logActivityBtnLocked]}
@@ -1001,34 +1102,21 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 size={22}
                 color={(!isPro && geminiCount >= MAX_SEARCHES) ? "#9E9E9E" : "#B8860B"}
               />
-              <Text style={styles.tripleBtnText}>
-                AI Scan
-              </Text>
-
+              <Text style={styles.tripleBtnText}>Scan</Text>
               {!isPro ? (
-                /* Non-Pro: Gold badge with dynamic count or Upgrade text */
                 <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
                   <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>
                     {geminiCount >= MAX_SEARCHES ? "UPGRADE" : `${MAX_SEARCHES - Number(geminiCount || 0)} FREE`}
                   </Text>
                 </View>
               ) : (
-                /* Pro: Solid Gold Bar */
                 <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4, backgroundColor: 'rgba(184, 134, 11, 0.2)' }]}>
-                  <View
-                    style={[
-                      styles.quotaBarFill,
-                      {
-                        width: '100%',
-                        backgroundColor: '#B8860B'
-                      }
-                    ]}
-                  />
+                  <View style={[styles.quotaBarFill, { width: '100%', backgroundColor: '#B8860B' }]} />
                 </View>
               )}
             </TouchableOpacity>
 
-            {/* NEW AI TEXT BUTTON */}
+            {/* AI TEXT */}
             <TouchableOpacity
               style={[styles.quadBtn, (!isPro && geminiCount >= MAX_SEARCHES) && styles.logActivityBtnLocked]}
               onPress={() => (geminiCount >= MAX_SEARCHES && !isPro) ? setShowPremium(true) : setIsAITextModal(true)}
@@ -1038,34 +1126,19 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 size={22}
                 color={(!isPro && geminiCount >= MAX_SEARCHES) ? "#9E9E9E" : "#B8860B"}
               />
-              <Text style={styles.tripleBtnText}>
-                AI Text
-              </Text>
-
+              <Text style={styles.tripleBtnText}>Text</Text>
               {!isPro ? (
-                /* Non-Pro: Show the Upgrade Badge if limit reached or simple text */
                 <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
-                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>
-                    {geminiCount >= MAX_SEARCHES ? "UPGRADE" : `${MAX_SEARCHES - Number(geminiCount || 0)} FREE`}
-                  </Text>
+                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>PRO</Text>
                 </View>
               ) : (
-                /* Pro: Show the solid Gold Bar style */
                 <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4, backgroundColor: 'rgba(184, 134, 11, 0.2)' }]}>
-                  <View
-                    style={[
-                      styles.quotaBarFill,
-                      {
-                        width: '100%',
-                        backgroundColor: '#B8860B'
-                      }
-                    ]}
-                  />
+                  <View style={[styles.quotaBarFill, { width: '100%', backgroundColor: '#B8860B' }]} />
                 </View>
               )}
             </TouchableOpacity>
 
-            {/* AI PROGRAM BUTTON */}
+            {/* AI PLAN */}
             <TouchableOpacity
               style={[styles.quadBtn, !isPro && styles.logActivityBtnLocked]}
               onPress={() => {
@@ -1083,25 +1156,14 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 size={22}
                 color={!isPro ? "#9E9E9E" : "#B8860B"}
               />
-              <Text style={styles.tripleBtnText}>
-                AI Plan
-              </Text>
-
+              <Text style={styles.tripleBtnText}>Plan</Text>
               {!isPro ? (
                 <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
-                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>UPGRADE</Text>
+                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>PRO</Text>
                 </View>
               ) : (
                 <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4, backgroundColor: 'rgba(184, 134, 11, 0.2)' }]}>
-                  <View
-                    style={[
-                      styles.quotaBarFill,
-                      {
-                        width: '100%',
-                        backgroundColor: '#B8860B'
-                      }
-                    ]}
-                  />
+                  <View style={[styles.quotaBarFill, { width: '100%', backgroundColor: '#B8860B' }]} />
                 </View>
               )}
             </TouchableOpacity>
@@ -1669,70 +1731,128 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                     /* --- 4. RESULTS VIEW --- */
                     <View>
                       {activeTab === 'Meals' ? (
+                        /* --- MEALS VIEW --- */
                         <View>
-                          {dietPlan?.standardPlan?.days?.map((day: any, dayIdx: number) => (
-                            <View key={dayIdx} style={{ marginBottom: 25 }}>
-                              {/* Day Header - Only shown if more than 1 day exists */}
-                              {dietPlan.standardPlan.days.length > 1 && (
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingHorizontal: 5 }}>
-                                  <MaterialCommunityIcons name="calendar-today" size={16} color="#1B4D20" />
-                                  <Text style={{ marginLeft: 8, fontWeight: '900', color: '#1B4D20', fontSize: 14, letterSpacing: 0.5 }}>
-                                    {day.dayName.toUpperCase()}
-                                  </Text>
-                                </View>
-                              )}
+                          {dietPlan?.standardPlan?.days?.map((day: any, dayIdx: number) => {
+                            const isExpanded = expandedMealDays.includes(dayIdx);
+                            return (
+                              <View key={dayIdx} style={{ marginBottom: 15 }}>
+                                {/* Collapsible Day Header */}
+                                <TouchableOpacity
+                                  activeOpacity={0.7}
+                                  onPress={() => toggleDay(dayIdx, expandedMealDays, setExpandedMealDays)}
+                                  style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    backgroundColor: '#F1F8E9',
+                                    padding: 12,
+                                    borderRadius: 15,
+                                    borderWidth: 1,
+                                    borderColor: '#E8F5E9',
+                                    marginBottom: isExpanded ? 12 : 0
+                                  }}
+                                >
+                                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <MaterialCommunityIcons name="calendar-check" size={20} color="#1B4D20" />
+                                    <Text style={{ marginLeft: 10, fontWeight: '900', color: '#1B4D20', fontSize: 13 }}>
+                                      {day.dayName.toUpperCase()}
+                                    </Text>
+                                  </View>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    {!isExpanded && (
+                                      <Text style={{ fontSize: 10, color: '#2E7D32', fontWeight: '700', marginRight: 10 }}>
+                                        {day.totalCalories} kcal
+                                      </Text>
+                                    )}
+                                    <MaterialCommunityIcons
+                                      name={isExpanded ? "chevron-up" : "chevron-down"}
+                                      size={20}
+                                      color="#1B4D20"
+                                    />
+                                  </View>
+                                </TouchableOpacity>
 
-                              {day.meals?.map((meal: any, idx: number) => {
-                                const mealItems = meal.items || [];
-                                return (
-                                  <View key={idx} style={[styles.collapsibleCard, { marginBottom: 15, borderColor: '#E8F5E9' }]}>
-                                    {/* Meal Header */}
-                                    <View style={{ backgroundColor: '#F1F8E9', padding: 10, borderBottomWidth: 1, borderBottomColor: '#E8F5E9', flexDirection: 'row', justifyContent: 'space-between' }}>
-                                      <Text style={{ fontWeight: '900', color: '#1B4D20', fontSize: 12 }}>{meal.mealName.toUpperCase()}</Text>
-                                      <Text style={{ fontWeight: '700', color: '#2E7D32', fontSize: 11 }}>{meal.mealCalories} kcal</Text>
-                                    </View>
-
-                                    {/* Meal Items List */}
-                                    <View style={{ padding: 12 }}>
-                                      {mealItems.length > 0 ? mealItems.map((item: any, i: number) => (
-                                        <View key={i} style={{ marginBottom: 8, borderBottomWidth: i === mealItems.length - 1 ? 0 : 1, borderBottomColor: '#F5F5F5', paddingBottom: 5 }}>
-                                          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                            <Text style={{ fontWeight: '700', fontSize: 13 }}>{item.itemName}</Text>
-                                            <Text style={{ fontSize: 11, color: '#1B4D20', fontWeight: 'bold' }}>{item.quantity}</Text>
+                                {/* Collapsible Content */}
+                                {isExpanded && (
+                                  <View style={{ paddingHorizontal: 2 }}>
+                                    {day.meals?.map((meal: any, idx: number) => (
+                                      <View key={idx} style={[styles.collapsibleCard, { marginBottom: 12, borderColor: '#E8F5E9' }]}>
+                                        <View style={{
+                                          backgroundColor: '#F9FBF9',
+                                          padding: 10,
+                                          borderBottomWidth: 1,
+                                          borderBottomColor: '#F1F8E9',
+                                          flexDirection: 'row',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center'
+                                        }}>
+                                          <View>
+                                            <Text style={{ fontWeight: '800', color: '#1B4D20', fontSize: 11 }}>{meal.mealName.toUpperCase()}</Text>
+                                            <Text style={{ fontWeight: '700', color: '#2E7D32', fontSize: 10 }}>{meal.mealCalories} kcal</Text>
                                           </View>
-                                          <Text style={{ fontSize: 11, color: '#666' }}>{item.calories} cal • {item.protein}g protein</Text>
+                                          <TouchableOpacity
+                                            onPress={() => quickAddMeal(meal)}
+                                            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F5E9', padding: 4, borderRadius: 8 }}
+                                          >
+                                            <Text style={{ fontSize: 9, fontWeight: '900', color: '#1B4D20', marginRight: 4 }}>LOG ALL</Text>
+                                            <MaterialCommunityIcons name="plus-box" size={20} color="#1B4D20" />
+                                          </TouchableOpacity>
                                         </View>
-                                      )) : <Text style={{ fontSize: 12, color: '#999', fontStyle: 'italic' }}>No item details.</Text>}
+
+                                        <View style={{ padding: 12 }}>
+                                          {meal.items?.map((item: any, i: number) => (
+                                            <View key={i} style={{
+                                              flexDirection: 'row',
+                                              alignItems: 'center',
+                                              marginBottom: 8,
+                                              borderBottomWidth: i === meal.items.length - 1 ? 0 : 1,
+                                              borderBottomColor: '#F5F5F5',
+                                              paddingBottom: 5
+                                            }}>
+                                              <View style={{ flex: 1 }}>
+                                                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                                  <Text style={{ fontWeight: '700', fontSize: 13 }}>{item.itemName}</Text>
+                                                  <Text style={{ fontSize: 11, color: '#1B4D20', fontWeight: 'bold' }}>{item.quantity}</Text>
+                                                </View>
+                                                <Text style={{ fontSize: 11, color: '#666' }}>{item.calories} cal • {item.protein}g protein</Text>
+                                              </View>
+
+                                              <TouchableOpacity
+                                                onPress={() => quickAddMeal(item)}
+                                                style={{ marginLeft: 10, padding: 4 }}
+                                              >
+                                                <MaterialCommunityIcons name="plus-circle" size={22} color="#1B4D20" />
+                                              </TouchableOpacity>
+                                            </View>
+                                          ))}
+                                        </View>
+                                      </View>
+                                    ))}
+
+                                    <View style={{ backgroundColor: '#E8F5E9', padding: 10, borderRadius: 12, alignSelf: 'flex-end', marginBottom: 10 }}>
+                                      <Text style={{ fontSize: 10, color: '#1B4D20', fontWeight: '800' }}>
+                                        DAY TOTAL: {day.totalCalories} kcal • {day.totalProtein}g Pro
+                                      </Text>
                                     </View>
                                   </View>
-                                );
-                              })}
-
-                              {/* Individual Day Totals Badge */}
-                              <View style={{ backgroundColor: '#E8F5E9', padding: 8, borderRadius: 10, alignSelf: 'flex-end', marginBottom: 10 }}>
-                                <Text style={{ fontSize: 10, color: '#1B4D20', fontWeight: '800' }}>
-                                  DAY TOTAL: {day.totalCalories} kcal • {day.totalProtein}g Pro
-                                </Text>
+                                )}
                               </View>
-                            </View>
-                          ))}
+                            );
+                          })}
 
-                          {/* Program Summary Footer */}
+                          {/* Meals Footer */}
                           <View style={{ backgroundColor: '#1B4D20', padding: 15, borderRadius: 15, flexDirection: 'row', justifyContent: 'space-around', marginTop: 10 }}>
                             <View style={{ alignItems: 'center' }}>
-                              <Text style={{ color: '#A5D6A7', fontSize: 9 }}>DURATION</Text>
-                              {/* Added optional chaining ?. */}
-                              <Text style={{ color: '#FFF', fontWeight: '900' }}>
-                                {dietPlan?.standardPlan?.generatedDuration?.toUpperCase() || "N/A"}
-                              </Text>
+                              <Text style={{ color: '#A5D6A7', fontSize: 9 }}>PLAN DURATION</Text>
+                              <Text style={{ color: '#FFF', fontWeight: '900' }}>{dietPlan?.standardPlan?.generatedDuration?.toUpperCase() || "N/A"}</Text>
                             </View>
                             <View style={{ alignItems: 'center' }}>
-                              <Text style={{ color: '#A5D6A7', fontSize: 9 }}>AVG CALORIES</Text>
+                              <Text style={{ color: '#A5D6A7', fontSize: 9 }}>AVG DAILY CALS</Text>
                               <Text style={{ color: '#FFF', fontWeight: '900' }}>
                                 {dietPlan?.standardPlan?.days
-                                  ? Math.round(dietPlan.standardPlan.days.reduce((acc: number, d: any) => acc + (d.totalCalories || 0), 0) / (dietPlan.standardPlan.days.length || 1))
-                                  : 0
-                                }
+                                  ? Math.round(dietPlan.standardPlan.days.reduce((acc: number, d: any) => acc + (d.totalCalories || 0), 0) / dietPlan.standardPlan.days.length)
+                                  : 0}
                               </Text>
                             </View>
                           </View>
@@ -1740,34 +1860,92 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                       ) : (
                         /* --- TRAINING VIEW --- */
                         <View>
-                          {dietPlan?.trainingProgram?.days?.map((day: any, idx: number) => (
-                            <View key={idx} style={[styles.collapsibleCard, { marginBottom: 15, borderColor: '#E3F2FD' }]}>
-                              <View style={{ backgroundColor: '#F0F7FF', padding: 10, borderBottomWidth: 1, borderBottomColor: '#E3F2FD', flexDirection: 'row', justifyContent: 'space-between' }}>
-                                <Text style={{ fontWeight: '900', color: '#1976D2', fontSize: 12 }}>{day.dayName.toUpperCase()}</Text>
-                                <Text style={{ fontWeight: '700', color: '#1E88E5', fontSize: 11 }}>{day.title || "Workout"}</Text>
-                              </View>
+                          {dietPlan?.trainingProgram?.days?.map((day: any, dayIdx: number) => {
+                            const isExpanded = expandedTrainingDays.includes(dayIdx);
+                            const isRestDay = day.title?.toLowerCase().includes('rest');
 
-                              <View style={{ padding: 12 }}>
-                                {day.exercises.length > 0 ? day.exercises.map((ex: string, i: number) => (
-                                  <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8, borderBottomWidth: i === day.exercises.length - 1 ? 0 : 1, borderBottomColor: '#F5F5F7', paddingBottom: 5 }}>
-                                    <MaterialCommunityIcons name="check-circle-outline" size={16} color="#4CAF50" style={{ marginTop: 2, marginRight: 8 }} />
-                                    <Text style={{ flex: 1, fontSize: 13, color: '#333', lineHeight: 18 }}>{ex}</Text>
+                            return (
+                              <View key={dayIdx} style={{ marginBottom: 15 }}>
+                                <TouchableOpacity
+                                  activeOpacity={0.7}
+                                  onPress={() => toggleDay(dayIdx, expandedTrainingDays, setExpandedTrainingDays)}
+                                  style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    backgroundColor: isRestDay ? '#F5F5F5' : '#F0F7FF',
+                                    padding: 12,
+                                    borderRadius: 15,
+                                    borderWidth: 1,
+                                    borderColor: isRestDay ? '#E0E0E0' : '#E3F2FD',
+                                    marginBottom: isExpanded ? 12 : 0
+                                  }}
+                                >
+                                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <MaterialCommunityIcons
+                                      name={isRestDay ? "coffee" : "arm-flex"}
+                                      size={20}
+                                      color={isRestDay ? "#9E9E9E" : "#1976D2"}
+                                    />
+                                    <Text style={{ marginLeft: 10, fontWeight: '900', color: isRestDay ? "#757575" : "#1976D2", fontSize: 13 }}>
+                                      {day.dayName.toUpperCase()}
+                                    </Text>
                                   </View>
-                                )) : <Text style={{ fontSize: 12, color: '#999', fontStyle: 'italic' }}>Rest Day</Text>}
-                              </View>
-                            </View>
-                          ))}
+                                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    {!isExpanded && (
+                                      <Text style={{ fontSize: 10, color: isRestDay ? "#9E9E9E" : "#1E88E5", fontWeight: '700', marginRight: 10 }}>
+                                        {day.title}
+                                      </Text>
+                                    )}
+                                    <MaterialCommunityIcons
+                                      name={isExpanded ? "chevron-up" : "chevron-down"}
+                                      size={20}
+                                      color={isRestDay ? "#9E9E9E" : "#1976D2"}
+                                    />
+                                  </View>
+                                </TouchableOpacity>
 
-                          {/* Training Summary Footer */}
+                                {isExpanded && (
+                                  <View style={[styles.collapsibleCard, { padding: 12, borderColor: isRestDay ? '#E0E0E0' : '#E3F2FD' }]}>
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                      <Text style={{ fontWeight: '800', color: '#333', fontSize: 14 }}>{day.title}</Text>
+                                      {!isRestDay && (
+                                        <TouchableOpacity onPress={() => quickAddTraining(day)} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                          <Text style={{ fontSize: 10, fontWeight: '800', color: '#1976D2', marginRight: 4 }}>LOG ACTIVITY</Text>
+                                          <MaterialCommunityIcons name="plus-box" size={24} color="#1976D2" />
+                                        </TouchableOpacity>
+                                      )}
+                                    </View>
+
+                                    {day.exercises?.length > 0 ? day.exercises.map((ex: any, i: number) => (
+                                      <View key={i} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <View style={{ flex: 1 }}>
+                                          <Text style={{ fontWeight: '700' }}>{ex.name}</Text>
+                                          <Text style={{ fontSize: 11 }}>{ex.sets} x {ex.reps} • {ex.caloriesBurned} cal</Text>
+                                        </View>
+                                        <TouchableOpacity onPress={() => quickAddTraining(ex)}>
+                                          <MaterialCommunityIcons name="plus-circle" size={22} color="#1976D2" />
+                                        </TouchableOpacity>
+                                      </View>
+                                    )) : (
+                                      <Text style={{ fontSize: 13, color: '#999', fontStyle: 'italic' }}>Enjoy your recovery day!</Text>
+                                    )}
+                                  </View>
+                                )}
+                              </View>
+                            );
+                          })}
+
+                          {/* Training Footer */}
                           <View style={{ backgroundColor: '#1976D2', padding: 15, borderRadius: 15, flexDirection: 'row', justifyContent: 'space-around' }}>
                             <View style={{ alignItems: 'center' }}>
-                              <Text style={{ color: '#BBDEFB', fontSize: 9 }}>PLAN LENGTH</Text>
-                              <Text style={{ color: '#FFF', fontWeight: '900' }}>{dietPlan.trainingProgram.generatedDuration.toUpperCase()}</Text>
+                              <Text style={{ color: '#BBDEFB', fontSize: 9 }}>PROGRAM LENGTH</Text>
+                              <Text style={{ color: '#FFF', fontWeight: '900' }}>{dietPlan?.trainingProgram?.generatedDuration?.toUpperCase() || "N/A"}</Text>
                             </View>
                             <View style={{ alignItems: 'center' }}>
-                              <Text style={{ color: '#BBDEFB', fontSize: 9 }}>SESSIONS</Text>
+                              <Text style={{ color: '#BBDEFB', fontSize: 9 }}>ACTIVE SESSIONS</Text>
                               <Text style={{ color: '#FFF', fontWeight: '900' }}>
-                                {dietPlan.trainingProgram.days.filter((d: any) => d.title.toLowerCase() !== 'rest').length} Active
+                                {dietPlan?.trainingProgram?.days?.filter((d: any) => !d.title?.toLowerCase().includes('rest')).length || 0} Days
                               </Text>
                             </View>
                           </View>
@@ -2021,24 +2199,24 @@ const styles = StyleSheet.create({
     marginTop: 10
   },
   quadBtn: {
-    flex: 1,
-    marginHorizontal: 2, // Reduced margin to fit 4
+    flex: 1, // Let flexbox handle equal widths
+    marginHorizontal: 2,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#E8F5E9',
-    paddingVertical: 12,
-    borderRadius: 15,
+    paddingVertical: 10, // Reduced padding to save height
+    borderRadius: 12,
     borderStyle: 'dashed',
     borderWidth: 1,
     borderColor: '#C8E6C9',
-    minHeight: 80
+    minHeight: 85 // Fixed height so they align perfectly
   },
   tripleBtnText: {
     color: '#1B4D20',
     fontWeight: '900',
-    fontSize: 9, // Slightly smaller font to prevent wrapping
-    marginTop: 6,
+    fontSize: 8, // Smaller font for 6 items
+    marginTop: 4,
     textAlign: 'center',
     textTransform: 'uppercase'
   },
