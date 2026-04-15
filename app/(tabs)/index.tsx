@@ -634,7 +634,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             calories: item.calories || 0,
             protein: item.protein || 0,
             carbs: item.carbs || 0,
-            isManual: false,
+            isManual: true,
             date: new Date().toISOString(),
             createdAt: serverTimestamp(),
           })
@@ -649,7 +649,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           calories: data.calories || 0,
           protein: data.protein || 0,
           carbs: data.carbs || 0,
-          isManual: false,
+          isManual: true,
           date: new Date().toISOString(),
           createdAt: serverTimestamp(),
         });
@@ -671,12 +671,12 @@ function SummaryScreen({ onRecommendationsFound }: any) {
 
         await addDoc(collection(db, 'users', userId, 'activities'), {
           type: data.title || "Workout Session",
-          icon: "arm-flex",
-          duration: 45, // Default for a full session
+          icon: "shield-star",
+          duration: 45,
           caloriesBurned: totalDayBurn,
           date: new Date().toISOString(),
           createdAt: serverTimestamp(),
-          isGroupedSession: true // Metadata to distinguish from single moves
+          isGroupedSession: true
         });
 
         Alert.alert("Added", `Entire ${data.title} session logged.`);
@@ -684,8 +684,8 @@ function SummaryScreen({ onRecommendationsFound }: any) {
       else if (data.name) {
         await addDoc(collection(db, 'users', userId, 'activities'), {
           type: data.name,
-          icon: "arm-flex",
-          duration: 10, // Default for single exercise
+          icon: "shield-star",
+          duration: 10,
           caloriesBurned: data.caloriesBurned || 0,
           date: new Date().toISOString(),
           createdAt: serverTimestamp(),
@@ -922,7 +922,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           calories: option.calories,
           protein: option.protein,
           carbs: option.carbs,
-          isManual: false,
+          isManual: true,
           date: new Date().toISOString(),
           createdAt: serverTimestamp(),
         });
@@ -1064,34 +1064,6 @@ function SummaryScreen({ onRecommendationsFound }: any) {
               <Text style={styles.tripleBtnText}>{(!isPro && activityQuotaCount >= MAX_ACTIVITIES) ? `Upgrade` : "Activity"}</Text>
             </TouchableOpacity>
 
-            {/* HEALTH SYNC (New Premium Button) */}
-            <TouchableOpacity
-              style={[styles.quadBtn, !isPro && styles.logActivityBtnLocked]}
-              onPress={() => {
-                if (!isPro) {
-                  setShowPremium(true);
-                } else {
-                  setIsHealthModalVisible(true);
-                }
-              }}
-            >
-              <MaterialCommunityIcons
-                name={!isPro ? "lock" : "google-fit"}
-                size={22}
-                color={!isPro ? "#9E9E9E" : "#B8860B"}
-              />
-              <Text style={[styles.tripleBtnText]}>Sync</Text>
-              {!isPro ? (
-                <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
-                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>PRO</Text>
-                </View>
-              ) : (
-                <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4, backgroundColor: 'rgba(25, 118, 210, 0.2)' }]}>
-                  <View style={[styles.quotaBarFill, { width: '100%', backgroundColor: '#B8860B' }]} />
-                </View>
-              )}
-            </TouchableOpacity>
-
             {/* AI SCAN */}
             <TouchableOpacity
               style={[styles.quadBtn, (!isPro && geminiCount >= MAX_SEARCHES) && styles.logActivityBtnLocked]}
@@ -1102,7 +1074,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 size={22}
                 color={(!isPro && geminiCount >= MAX_SEARCHES) ? "#9E9E9E" : "#B8860B"}
               />
-              <Text style={styles.tripleBtnText}>Scan</Text>
+              <Text style={styles.tripleBtnText}>AI Scan</Text>
               {!isPro ? (
                 <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
                   <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>
@@ -1126,10 +1098,40 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 size={22}
                 color={(!isPro && geminiCount >= MAX_SEARCHES) ? "#9E9E9E" : "#B8860B"}
               />
-              <Text style={styles.tripleBtnText}>Text</Text>
+              <Text style={styles.tripleBtnText}>AI Text</Text>
               {!isPro ? (
                 <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
-                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>PRO</Text>
+                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>
+                    {geminiCount >= MAX_SEARCHES ? "UPGRADE" : `${MAX_SEARCHES - Number(geminiCount || 0)} FREE`}
+                  </Text>
+                </View>
+              ) : (
+                <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4, backgroundColor: 'rgba(184, 134, 11, 0.2)' }]}>
+                  <View style={[styles.quotaBarFill, { width: '100%', backgroundColor: '#B8860B' }]} />
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* HEALTH SYNC (New Premium Button) */}
+            <TouchableOpacity
+              style={[styles.quadBtn, !isPro && styles.logActivityBtnLocked]}
+              onPress={() => {
+                if (!isPro) {
+                  setShowPremium(true);
+                } else {
+                  setIsHealthModalVisible(true);
+                }
+              }}
+            >
+              <MaterialCommunityIcons
+                name={!isPro ? "lock" : "google-fit"}
+                size={22}
+                color={!isPro ? "#9E9E9E" : "#B8860B"}
+              />
+              <Text style={[styles.tripleBtnText]}>Sync</Text>
+              {!isPro ? (
+                <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
+                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>UPGRADE</Text>
                 </View>
               ) : (
                 <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4, backgroundColor: 'rgba(184, 134, 11, 0.2)' }]}>
@@ -1156,10 +1158,10 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                 size={22}
                 color={!isPro ? "#9E9E9E" : "#B8860B"}
               />
-              <Text style={styles.tripleBtnText}>Plan</Text>
+              <Text style={styles.tripleBtnText}>AI Plan</Text>
               {!isPro ? (
                 <View style={{ marginTop: 4, backgroundColor: '#DAA520', paddingHorizontal: 6, borderRadius: 4 }}>
-                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>PRO</Text>
+                  <Text style={{ fontSize: 8, color: '#FFF', fontWeight: '900' }}>UPGRADE</Text>
                 </View>
               ) : (
                 <View style={[styles.quotaBarWrapper, { width: '75%', marginTop: 4, backgroundColor: 'rgba(184, 134, 11, 0.2)' }]}>

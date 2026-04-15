@@ -109,9 +109,9 @@ export default function PremiumModal({ visible, onClose }) {
             {[
               "Unlimited AI Meal Scans",
               "Unlimited AI Text Descriptions",
+              "Sync with Google Fit & Samsung Health",
               "AI Health Plan",
-              "Full Graphical Trend Analysis",
-              "Sync with Google Fit & Samsung Health"
+              "Full Graphical Trend Analysis"
             ].map((feature, index) => (
               <View key={index} style={styles.featureItem}>
                 <MaterialCommunityIcons name="check-circle" size={18} color="#2E7D32" />
