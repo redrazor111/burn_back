@@ -339,28 +339,28 @@ export default function HistorySummary() {
                         <View style={styles.averagesContainer}>
                             <View style={{ flexDirection: 'row', marginBottom: 10 }}>
                                 <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9' }]}>
-                                    <Text style={styles.avgLabelCenter}>TODAY</Text>
+                                    <Text style={styles.avgLabelCenter}>TODAY REMAINING</Text>
                                     <Text style={styles.avgValueCenter}>{averages.today.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
                                 </View>
                                 <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
-                                    <Text style={styles.avgLabelCenter}>DAILY AVG (WEEK)</Text>
+                                    <Text style={styles.avgLabelCenter}>DAILY REMAINING AVG (WEEK)</Text>
                                     <Text style={styles.avgValueCenter}>{averages.weekly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
                                 </View>
                             </View>
                             <View style={{ flexDirection: 'row', marginBottom: 10 }}>
                                 <View style={styles.avgBoxSmall}>
-                                    <Text style={styles.avgLabelCenter}>DAILY AVG (MONTH)</Text>
+                                    <Text style={styles.avgLabelCenter}>DAILY REMAINING AVG (MONTH)</Text>
                                     <Text style={styles.avgValueCenter}>{averages.monthly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
                                 </View>
                                 <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9' }]}>
-                                    <Text style={styles.avgLabelCenter}>DAILY AVG (YEAR)</Text>
+                                    <Text style={styles.avgLabelCenter}>DAILY REMAINING AVG (YEAR)</Text>
                                     <Text style={styles.avgValueCenter}>{averages.yearly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
                                 </View>
                             </View>
                         </View>
 
                         <View style={styles.comparisonCard}>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 }}>
                                 <Text style={styles.comparisonTitle}>Remaining Calories History</Text>
                                 <View style={{ backgroundColor: '#B8860B', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
                                     <Text style={{ fontSize: 10, color: '#FFF', fontWeight: 'bold' }}>GOAL: {targetCalories}</Text>

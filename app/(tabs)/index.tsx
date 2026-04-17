@@ -50,6 +50,7 @@ import Shop from '../../components/Shop';
 import { db, silentSignIn } from '@/utils/firebaseConfig';
 import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 
+import { useToast } from '@/components/Toast';
 import { useSubscriptionStatus } from '@/utils/subscription';
 import { MAX_ACTIVITIES, MAX_MEALS, MAX_SEARCHES } from '../../utils/constants';
 
@@ -100,6 +101,7 @@ type PlanType = 'Meal' | 'Training' | 'Both';
 function SummaryScreen({ onRecommendationsFound }: any) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
+  const { show: showToast, ToastComponent } = useToast();
   const [userId, setUserId] = useState<string | null | undefined>(null);
 
   const [targetCalories, setTargetCalories] = useState(0);
@@ -641,7 +643,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         );
 
         await Promise.all(batchPromises);
-        Alert.alert("Added", `All items from ${data.mealName} added.`);
+        showToast(`All items from ${data.mealName} added.`);
       }
       else {
         await addDoc(collection(db, 'users', userId, 'meals'), {
@@ -653,7 +655,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           date: new Date().toISOString(),
           createdAt: serverTimestamp(),
         });
-        Alert.alert("Added", `${data.itemName} added to intake.`);
+        showToast(`${data.itemName} added to intake.`);
       }
 
       refreshQuotas();
@@ -679,7 +681,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           isGroupedSession: true
         });
 
-        Alert.alert("Added", `Entire ${data.title} session logged.`);
+        showToast(`Entire ${data.title} session logged.`);
       }
       else if (data.name) {
         await addDoc(collection(db, 'users', userId, 'activities'), {
@@ -691,7 +693,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           createdAt: serverTimestamp(),
         });
 
-        Alert.alert("Added", `${data.name} added to activities.`);
+        showToast(`${data.name} added to activities.`);
       }
       refreshQuotas();
     } catch (e) {
@@ -959,6 +961,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   }
   return (
     <View style={styles.cameraTabContainer}>
+      {ToastComponent}
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <View style={styles.headerTopRow}>
           <Text style={styles.title}>Daily Dashboard</Text>
