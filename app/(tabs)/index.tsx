@@ -551,59 +551,65 @@ function SummaryScreen({ onRecommendationsFound }: any) {
   };
 
   const saveProfileData = async () => {
-    // 1. Convert inputs to numbers
+    // 1. Validation Logic (Keep your existing validation)
     const cals = Math.floor(Number(tempCalories));
     const prot = Math.floor(Number(tempProtein));
     const ageNum = Math.floor(Number(tempAge));
     const weightNum = Math.floor(Number(tempWeight));
 
-    // 2. Calorie Validation (500 - 10,000)
     if (isNaN(cals) || cals < 500 || cals > 10000) {
       Alert.alert("Invalid Calories", "Please enter a goal between 500 and 10,000.");
       return;
     }
-
-    // 3. Protein Validation (30 - 500)
     if (isNaN(prot) || prot < 30 || prot > 500) {
       Alert.alert("Invalid Protein", "Please enter a goal between 30g and 500g.");
       return;
     }
-
-    // 4. Age Validation (13 - 120)
     if (isNaN(ageNum) || ageNum < 13 || ageNum > 120) {
       Alert.alert("Invalid Age", "Please enter a valid age between 13 and 120.");
       return;
     }
-
-    // 5. Weight Validation (30 - 500)
     if (isNaN(weightNum) || weightNum < 30 || weightNum > 500) {
       Alert.alert("Invalid Weight", "Please enter a weight between 30kg and 500kg.");
       return;
     }
 
-    // 6. Database Save
     try {
-      if (userId) {
-        setIsSaving(true);
-
-        await setDoc(doc(db, 'users', userId, 'profile', 'data'), {
-          targetCalories: cals,
-          targetProtein: prot,
-          goalType: tempGoalType,
-          gender: tempGender,
-          age: ageNum,
-          weight: weightNum,
-          isNewUser: false,
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-
-        await refreshQuotas();
-        setIsEditingTarget(false);
-        Keyboard.dismiss();
+      // Check if we actually have a UID
+      const uid = userId || await silentSignIn();
+      if (!uid) {
+        Alert.alert("Session Error", "Please check your internet connection.");
+        return;
       }
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (e) {
-      Alert.alert("Error", "Failed to save, close app and try again.");
+
+      setIsSaving(true);
+      const userRef = doc(db, 'users', uid, 'profile', 'data');
+
+      await setDoc(userRef, {
+        targetCalories: cals,
+        targetProtein: prot,
+        goalType: tempGoalType,
+        gender: tempGender,
+        age: ageNum,
+        weight: weightNum,
+        isNewUser: false,
+        lastSavedDate: new Date().toDateString(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      // Update local state immediately so the UI doesn't flicker
+      setTargetCalories(cals);
+      setTargetProtein(prot);
+      setAge(ageNum);
+      setWeight(weightNum);
+
+      await refreshQuotas();
+      setIsEditingTarget(false);
+      Keyboard.dismiss();
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (e: any) {
+      Alert.alert("Connection Issue", "We couldn't reach the server. Please try saving one more time.");
     } finally {
       setIsSaving(false);
     }
@@ -1382,7 +1388,11 @@ function SummaryScreen({ onRecommendationsFound }: any) {
                     <ScrollView showsVerticalScrollIndicator onStartShouldSetResponderCapture={() => true}>
                       {pendingResult?.options?.map((opt, idx) => (
                         <View key={idx} style={styles.optionCard}>
-                          <TouchableOpacity style={{ flex: 1 }}><Text style={styles.optionName}>{opt.name}</Text><Text style={styles.optionCal}>{opt.calories} cal</Text></TouchableOpacity>
+                          <TouchableOpacity style={{ flex: 1 }}>
+                            <Text style={styles.optionName}>{opt.name}</Text>
+                            <Text style={styles.optionCal}>{opt.calories} cal</Text>
+                            <Text style={{ fontSize: 11, color: '#666' }}>Prot: {opt.protein || 0}g | Carbs: {opt.carbs || 0}g</Text>
+                          </TouchableOpacity>
                           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <TouchableOpacity onPress={() => startEditingOption(opt)} style={{ padding: 8 }}><Ionicons name="pencil" size={20} color="#9E9E9E" /></TouchableOpacity>
                             <TouchableOpacity onPress={() => confirmSelection(opt)} style={{ padding: 8 }}><Ionicons name="add-circle" size={28} color="#1B4D20" /></TouchableOpacity>

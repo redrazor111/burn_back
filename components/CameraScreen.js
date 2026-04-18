@@ -234,7 +234,7 @@ export default function CameraScreen() {
                         <View style={{ flex: 1 }}>
                           <Text style={styles.optionName}>{opt.name}</Text>
                           <Text style={styles.optionCal}>{opt.calories} cal</Text>
-                          <Text style={{fontSize: 11, color: '#666'}}>P: {opt.protein || 0}g | C: {opt.carbs || 0}g</Text>
+                          <Text style={{fontSize: 11, color: '#666'}}>Prot: {opt.protein || 0}g | Carbs: {opt.carbs || 0}g</Text>
                         </View>
                         <View style={{ flexDirection: 'row' }}>
                           <TouchableOpacity onPress={() => startEditingOption(opt)} style={styles.rowActionBtn}>
