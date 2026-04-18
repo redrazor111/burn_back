@@ -65,6 +65,7 @@ interface ScanResult {
   carbs?: number;
   protein?: number;
   isManual: boolean;
+  icon: string
 }
 
 interface PendingResult {
@@ -637,6 +638,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             protein: item.protein || 0,
             carbs: item.carbs || 0,
             isManual: true,
+            icon: "shield-star",
             date: new Date().toISOString(),
             createdAt: serverTimestamp(),
           })
@@ -652,6 +654,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           protein: data.protein || 0,
           carbs: data.carbs || 0,
           isManual: true,
+          icon: "shield-star",
           date: new Date().toISOString(),
           createdAt: serverTimestamp(),
         });
@@ -832,6 +835,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
         protein: protein,
         carbs: carbs,
         isManual: true,
+        icon: 'food-apple',
         date: new Date().toISOString(),
         createdAt: serverTimestamp(),
       });
@@ -925,6 +929,7 @@ function SummaryScreen({ onRecommendationsFound }: any) {
           protein: option.protein,
           carbs: option.carbs,
           isManual: true,
+          icon: 'text-search',
           date: new Date().toISOString(),
           createdAt: serverTimestamp(),
         });
@@ -1201,7 +1206,11 @@ function SummaryScreen({ onRecommendationsFound }: any) {
             <View key={item.id} style={styles.collapsibleCard}>
               <View style={styles.cardHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <View style={styles.iconPlaceholder}><MaterialCommunityIcons name={item.isManual ? "food-apple" : "camera"} size={24} color="#1B4D20" /></View>
+                  <MaterialCommunityIcons
+                    name={(item.icon ?? (item.isManual ? "food-apple" : "camera")) as any}
+                    size={24}
+                    color="#1B4D20"
+                  />
                   <View style={styles.headerInfo}>
                     <Text style={styles.foodTitle}>{item.productName}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>

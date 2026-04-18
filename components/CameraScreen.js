@@ -109,6 +109,7 @@ export default function CameraScreen() {
         protein: parseInt(option.protein || 0),
         carbs: parseInt(option.carbs || 0),
         isManual: false,
+        icon: 'camera',
         date: new Date().toISOString(),
         createdAt: serverTimestamp(),
       });

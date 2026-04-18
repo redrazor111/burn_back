@@ -261,7 +261,11 @@ export default function ScanHistory() {
                 {groupedData[dateKey].items.map((item) => (
                   <View key={item.id} style={styles.historyCard}>
                     <View style={styles.historyIconBg}>
-                      <MaterialCommunityIcons name="food-apple" size={26} color="#1B4D20" />
+                      <View style={styles.iconPlaceholder}><MaterialCommunityIcons
+                        name={item.icon ?? (item.isManual ? "food-apple" : "camera")}
+                        size={26}
+                        color="#1B4D20"
+                      /></View>
                     </View>
                     <View style={styles.historyDetails}>
                       <Text style={styles.historyFoodName}>{item.identifiedProduct || 'Meal'}</Text>
