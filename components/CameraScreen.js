@@ -21,7 +21,7 @@ import { auth, db } from '@/utils/firebaseConfig';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
 // Local Utilities & Components
-import { checkQuota, incrementQuota } from '@/utils/quotaService';
+import { checkQuota, decrementQuota, incrementQuota } from '@/utils/quotaService';
 import Guide from '../components/Guide';
 import Shop from '../components/Shop';
 import { analyzeImageWithGemini } from '../utils/geminiService';
@@ -76,28 +76,36 @@ export default function CameraScreen() {
     }
   }, [isLoading]);
 
-  const handleScan = async (base64Data) => {
-    if (!isPro) {
-      const status = await checkQuota();
-      if (status === 'LIMIT_REACHED') {
-        setShowPremium(true);
-        return;
-      }
+const handleScan = async (base64Data) => {
+  if (!isPro) {
+    const status = await checkQuota();
+    if (status === 'LIMIT_REACHED') {
+      setShowPremium(true);
+      return;
     }
+  }
 
-    setIsLoading(true);
-    try {
-      const rawResponse = await analyzeImageWithGemini(isPro, undefined, base64Data, undefined, false);
-      const data = JSON.parse(rawResponse);
-      await incrementQuota();
-      setPendingResult({ options: data.identifiedOptions.slice(0, 3), rawResult: data });
-    } catch (e) {
-      console.error("Scan Error:", e);
-    } finally {
-      setIsLoading(false);
+  setIsLoading(true);
+
+  let quotaIncremented = false;
+  if (!isPro) {
+    await incrementQuota();
+    quotaIncremented = true;
+  }
+
+  try {
+    const rawResponse = await analyzeImageWithGemini(isPro, undefined, base64Data, undefined, false);
+    const data = JSON.parse(rawResponse);
+
+    setPendingResult({ options: data.identifiedOptions.slice(0, 3), rawResult: data });
+  } catch (e) {
+    if (quotaIncremented) {
+      await decrementQuota();
     }
-  };
-
+  } finally {
+    setIsLoading(false);
+  }
+};
   const confirmSelection = async (option) => {
     const user = auth.currentUser;
     if (!user) return;

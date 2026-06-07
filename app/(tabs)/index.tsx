@@ -26,6 +26,7 @@ import {
   checkMealsQuota,
   checkQuota,
   decrementMealsQuota,
+  decrementQuota,
   getGeminiCount,
   incrementActivitesQuota,
   incrementMealsQuota,
@@ -765,52 +766,53 @@ function SummaryScreen({ onRecommendationsFound }: any) {
     }
   };
 
-  const handleAITextSearch = async () => {
-    if (!isPro) {
-      const status = await checkQuota();
-      if (status === 'LIMIT_REACHED') {
-        setIsAITextModal(false);
-        setShowPremium(true);
-        return;
-      }
-    }
-
-    if (!aiTextQuery.trim()) return;
-
-    setIsAILoading(true);
-
-    try {
-      const rawResponse = await analyzeImageWithGemini(
-        isPro,
-        {
-          gender,
-          age,
-          targetCalories,
-          targetProtein,
-          weight
-        },
-        undefined,
-        aiTextQuery,
-        false
-      );
-
-      const data = JSON.parse(rawResponse);
-      await incrementQuota();
-      setPendingResult({
-        options: data.identifiedOptions.slice(0, 3),
-        rawResult: data
-      });
-
+const handleAITextSearch = async () => {
+  if (!isPro) {
+    const status = await checkQuota();
+    if (status === 'LIMIT_REACHED') {
       setIsAITextModal(false);
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (e) {
-      Alert.alert("AI Error", "Failed to analyze your meal. Please try again.");
-    } finally {
-      setIsAILoading(false);
-      setAiTextQuery('');
-      refreshQuotas();
+      setShowPremium(true);
+      return;
     }
-  };
+  }
+
+  if (!aiTextQuery.trim()) return;
+  setIsAILoading(true);
+
+  let quotaIncremented = false;
+  if (!isPro) {
+    await incrementQuota();
+    quotaIncremented = true;
+  }
+
+  try {
+    const rawResponse = await analyzeImageWithGemini(
+      isPro,
+      { gender, age, targetCalories, targetProtein, weight },
+      undefined,
+      aiTextQuery,
+      false
+    );
+
+    const data = JSON.parse(rawResponse);
+
+    setPendingResult({
+      options: data.identifiedOptions.slice(0, 3),
+      rawResult: data
+    });
+
+    setIsAITextModal(false);
+  } catch (e) {
+    if (quotaIncremented) {
+      await decrementQuota();
+    }
+    Alert.alert("AI Error", "Failed to analyze your meal. Please try again.");
+  } finally {
+    setIsAILoading(false);
+    setAiTextQuery('');
+    refreshQuotas();
+  }
+};
 
   const handleManualFoodLog = async () => {
     if (!userId) return;

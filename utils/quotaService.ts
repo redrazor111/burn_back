@@ -41,6 +41,11 @@ export const incrementQuota = async () => {
   if (userRef) await setDoc(userRef, { geminiCount: increment(1) }, { merge: true });
 };
 
+export const decrementQuota = async () => {
+  const userRef = await getProfileDoc();
+  if (userRef) await setDoc(userRef, { geminiCount: increment(-1) }, { merge: true });
+};
+
 export const checkMealsQuota = async () => {
   const userRef = await getProfileDoc();
   if (!userRef) return 0;

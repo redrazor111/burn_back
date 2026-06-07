@@ -19,10 +19,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Component Imports
-import { useSubscriptionStatus } from '@/utils/subscription';
 import Guide from '../components/Guide';
 import Shop from '../components/Shop';
-import PremiumModal from './PremiumModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -54,7 +52,6 @@ const HALF_HEIGHT = 130;
 export default function HistorySummary() {
     const insets = useSafeAreaInsets();
     const isFocused = useIsFocused();
-    const { isPro } = useSubscriptionStatus();
     const [userId, setUserId] = useState(auth.currentUser?.uid);
     const [showChart, setShowChart] = useState(false);
     const [meals, setMeals] = useState([]);
@@ -65,7 +62,6 @@ export default function HistorySummary() {
     const [searchQuery, setSearchQuery] = useState('');
     const [showShop, setShowShop] = useState(false);
     const [showGuide, setShowGuide] = useState(false);
-    const [showPremium, setShowPremium] = useState(false);
     const chartScrollRef = useRef(null);
 
     useEffect(() => {
@@ -79,7 +75,7 @@ export default function HistorySummary() {
             if (snap.exists()) {
                 const data = snap.data();
                 setTargetCalories(Number(data.targetCalories || 2000));
-                setTargetProtein(Number(data.targetProtein || 0)); // Fetch Target Protein
+                setTargetProtein(Number(data.targetProtein || 0));
             }
         });
         const mealsUnsub = onSnapshot(query(collection(db, 'users', userId, 'meals'), orderBy('createdAt', 'desc')), (snap) => {
@@ -91,26 +87,27 @@ export default function HistorySummary() {
         return () => { profileUnsub(); mealsUnsub(); actsUnsub(); };
     }, [userId]);
 
-    const handleOpenChart = () => {
-        if (isPro) {
-            setShowChart(true);
-            setTimeout(() => {
-                chartScrollRef.current?.scrollToEnd({ animated: false });
-            }, 500);
-        } else {
-            setShowPremium(true);
-        }
+    const handleOpenHistoryModal = () => {
+        setShowChart(true);
     };
 
     useEffect(() => {
         if (isFocused) {
             setExpandedSections({});
-            setShowPremium(false);
             setShowShop(false);
             setShowChart(false);
             setShowGuide(false);
         }
     }, [isFocused]);
+
+    // Auto-scroll the trend chart when the main screen focuses and data scales load
+    useEffect(() => {
+        if (isFocused && meals.length > 0) {
+            setTimeout(() => {
+                chartScrollRef.current?.scrollToEnd({ animated: false });
+            }, 500);
+        }
+    }, [isFocused, meals]);
 
     const getSafeDateKey = (dateString) => {
         if (!dateString) return "Unknown";
@@ -130,7 +127,7 @@ export default function HistorySummary() {
             const key = getSafeDateKey(m.date || m.createdAt?.toDate?.()?.toISOString());
             if (!groups[key]) groups[key] = { intake: 0, protein: 0, burned: 0, target: targetCalories, rawMeals: [], rawActs: [] };
             groups[key].intake += Number(m.calories || 0);
-            groups[key].protein += Number(m.protein || 0); // Aggregate Protein
+            groups[key].protein += Number(m.protein || 0);
             groups[key].rawMeals.push(m);
         });
 
@@ -200,12 +197,13 @@ export default function HistorySummary() {
 
     return (
         <View style={styles.fullScreen}>
+            {/* Header stays identical structure, icon targets list logs modal now */}
             <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
                 <View style={styles.headerTopRow}>
-                    <Text style={styles.title}>Balance History</Text>
+                    <Text style={styles.title}>Balance Trends</Text>
                     <View style={styles.headerActions}>
-                        <TouchableOpacity onPress={handleOpenChart} style={styles.actionBtn}>
-                            <MaterialCommunityIcons name="finance" size={28} color="#B8860B" />
+                        <TouchableOpacity onPress={handleOpenHistoryModal} style={styles.actionBtn}>
+                            <MaterialCommunityIcons name="format-list-bulleted" size={28} color="#1B4D20" />
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
                             <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />
@@ -217,20 +215,16 @@ export default function HistorySummary() {
                 </View>
                 <View style={styles.headerAccentBar} />
 
-                {/* Today Summary Card with Protein Added */}
+                {/* Today Summary Card */}
                 <View style={styles.todaySummaryCard}>
                     <View style={{ flex: 1 }}>
                         <Text style={styles.todayLabel}>TODAY'S REMAINING</Text>
-
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
                             <View style={{ flex: 1 }}>
                                 <Text style={styles.todayValue}>{todayStats.remaining} <Text style={styles.todayUnit}>cal</Text></Text>
                                 <Text style={styles.goalText}>CAL GOAL: {targetCalories} cal</Text>
                             </View>
-
-                            {/* Divider Line */}
-                            <View style={{ width: 1, height: '80%', backgroundColor: 'rgba(255,255,255,0.2)', mx: 15 }} />
-
+                            <View style={{ width: 1, height: '80%', backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 15 }} />
                             <View style={{ flex: 1, paddingLeft: 15 }}>
                                 <Text style={styles.todayValue}>{todayStats.proteinRemaining}<Text style={styles.todayUnit}>g</Text></Text>
                                 <Text style={styles.goalText}>PROTEIN GOAL: {targetProtein}g</Text>
@@ -243,201 +237,208 @@ export default function HistorySummary() {
                 </View>
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollPadding} showsVerticalScrollIndicator={false}>
-                <View style={[styles.searchContainer, styles.searchMargin]}>
-                    <Ionicons name="search" size={22} color="#999" style={styles.searchIcon} />
-                    <TextInput
-                        style={styles.searchInput}
-                        placeholder="Search food or activity..."
-                        placeholderTextColor="#999"
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                    />
-                    {searchQuery.length > 0 && (
-                        <TouchableOpacity
-                            onPress={() => setSearchQuery('')}
-                            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                        >
-                            <Ionicons name="close-circle" size={22} color="#CCC" />
-                        </TouchableOpacity>
-                    )}
+            {/* Main Screen Content: Trends, Averages & Charts */}
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 15, paddingBottom: 40 }}>
+                <View style={styles.averagesContainer}>
+                    <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+                        <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9' }]}>
+                            <Text style={styles.avgLabelCenter}>TODAY REMAINING</Text>
+                            <Text style={styles.avgValueCenter}>{averages.today.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                        </View>
+                        <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
+                            <Text style={styles.avgLabelCenter}>DAILY REMAINING AVG (WEEK)</Text>
+                            <Text style={styles.avgValueCenter}>{averages.weekly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                        </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+                        <View style={styles.avgBoxSmall}>
+                            <Text style={styles.avgLabelCenter}>DAILY REMAINING AVG (MONTH)</Text>
+                            <Text style={styles.avgValueCenter}>{averages.monthly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                        </View>
+                        <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9' }]}>
+                            <Text style={styles.avgLabelCenter}>DAILY REMAINING AVG (YEAR)</Text>
+                            <Text style={styles.avgValueCenter}>{averages.yearly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+                        </View>
+                    </View>
                 </View>
 
-                {sortedDates.map(dateKey => {
-                    const data = stats[dateKey];
-                    const netRemaining = targetCalories + data.burned - data.intake;
-                    const isDeficit = netRemaining >= 0;
-                    const todayKey = getSafeDateKey(new Date().toISOString());
-                    const readableDate = dateKey === todayKey ? "Today" : getOrdinalDate(dateKey);
-                    const protIn = data.protein || 0;
-                    const protRemaining = Math.max(targetProtein - protIn, 0);
-                    const protPct = targetProtein > 0 ? Math.min(Math.round((protIn / targetProtein) * 100), 100) : 0;
-
-                    return (
-                        <View key={dateKey} style={styles.daySection}>
-                            <TouchableOpacity style={[styles.summaryCard, !isDeficit && styles.summaryCardSurplus]} onPress={() => toggleSection(dateKey)} activeOpacity={0.9}>
-                                <View style={styles.cardTop}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                        <Text style={styles.dateText}>{readableDate}</Text>
-                                        <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#999" style={{ marginLeft: 5 }} />
-                                    </View>
-                                    <View style={[styles.statusBadge, { backgroundColor: isDeficit ? '#E8F5E9' : '#FFEBEE' }]}>
-                                        <Text style={[styles.statusText, { color: isDeficit ? '#2E7D32' : '#C62828' }]}>{isDeficit ? 'UNDER' : 'OVER'}</Text>
-                                    </View>
-                                </View>
-                                <View style={styles.mathRow}>
-                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Cal Goal</Text><Text style={styles.mathValue}>{targetCalories} cal</Text></View>
-                                    <Text style={styles.mathOperator}>+</Text>
-                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Burn</Text><Text style={styles.mathValue}>{data.burned} cal</Text></View>
-                                    <Text style={styles.mathOperator}>-</Text>
-                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>In</Text><Text style={styles.mathValue}>{data.intake} cal</Text></View>
-                                    <Text style={styles.mathOperator}>=</Text>
-                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Balance</Text><Text style={[styles.mathValue, { color: isDeficit ? '#1B4D20' : '#C62828' }]}>{Math.abs(netRemaining)} cal</Text></View>
-                                </View>
-
-                                <View style={{ height: 1, backgroundColor: '#F0F0F0', marginVertical: 10, opacity: 0.6 }} />
-
-                                <View style={styles.mathRow}>
-                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Prot Goal</Text><Text style={styles.mathValue}>{targetProtein}g</Text></View>
-                                    <Text style={styles.mathOperator}> </Text>
-                                    <View style={styles.mathItem}>
-                                        <View style={{ backgroundColor: protPct === 100 ? '#E8F5E9' : '#F3E5F5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                                            <Text style={{ fontSize: 9, fontWeight: '900', color: protPct === 100 ? '#2E7D32' : '#7B1FA2' }}>{protPct}% MET</Text>
-                                        </View>
-                                    </View>
-                                    <Text style={styles.mathOperator}>-</Text>
-                                    <View style={styles.mathItem}><Text style={styles.mathLabel}>Prot In</Text><Text style={styles.mathValue}>{protIn}g</Text></View>
-                                    <Text style={styles.mathOperator}>=</Text>
-                                    <View style={styles.mathItem}>
-                                        <Text style={styles.mathLabel}>Remaining</Text>
-                                        <Text style={[styles.mathValue, { color: '#7B1FA2' }]}>{protRemaining}g</Text>
-                                    </View>
-                                </View>
-                                {(expandedSections[dateKey] || searchQuery) && (
-                                    <View style={styles.detailsList}>
-                                        {data.rawMeals.map(m => (<View key={m.id} style={styles.detailRow}><Text style={styles.detailName}>{m.productName || m.identifiedProduct}</Text><Text style={styles.detailValue}>-{m.calories} cal</Text></View>))}
-                                        {data.rawActs.map(a => (<View key={a.id} style={styles.detailRow}><Text style={[styles.detailName, { color: '#1B4D20' }]}>{a.type || 'Exercise'}</Text><Text style={[styles.detailValue, { color: '#1B4D20' }]}>+{a.caloriesBurned} cal</Text></View>))}
-                                    </View>
-                                )}
-                            </TouchableOpacity>
+                <View style={styles.comparisonCard}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 }}>
+                        <Text style={styles.comparisonTitle}>Remaining Calories History</Text>
+                        <View style={{ backgroundColor: '#B8860B', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
+                            <Text style={{ fontSize: 10, color: '#FFF', fontWeight: 'bold' }}>GOAL: {targetCalories}</Text>
                         </View>
-                    );
-                })}
+                    </View>
+
+                    <View style={{ marginTop: 20 }}>
+                        <View style={[styles.chartWrapper, { height: 280 }]}>
+                            <View style={[styles.targetBaseline, { top: 130 }]} />
+                            <View style={{ position: 'absolute', top: 120, left: 8, zIndex: 25 }}>
+                                <Text style={{ fontSize: 8, color: '#B8860B', fontWeight: '900', letterSpacing: 0.5 }}>GOAL</Text>
+                            </View>
+                            <ScrollView
+                                horizontal
+                                ref={chartScrollRef}
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={{
+                                    paddingHorizontal: 15,
+                                    alignItems: 'center',
+                                    height: 280,
+                                    backgroundColor: '#F9F9F9',
+                                }}
+                                onContentSizeChange={() => chartScrollRef.current?.scrollToEnd({ animated: false })}
+                            >
+                                {sortedDates.slice().reverse().map((dateKey) => {
+                                    const data = stats[dateKey] || { intake: 0, burned: 0 };
+                                    const balance = targetCalories - (data.intake - data.burned);
+                                    const isOver = balance < 0;
+                                    const barHeight = Math.min(
+                                        (Math.abs(balance) / (maxVal / 2)) * HALF_HEIGHT,
+                                        HALF_HEIGHT - 2
+                                    );
+                                    const parts = dateKey.split('-');
+                                    const dDate = `${parts[2]}/${parts[1]}`;
+                                    return (
+                                        <View key={dateKey} style={styles.barColumn}>
+                                            <View style={styles.chartHalfUnder}>
+                                                {!isOver && balance !== 0 && (
+                                                    <>
+                                                        <Text style={[styles.barValueText, { color: '#2E7D32', marginBottom: 2 }]}>
+                                                            +{Math.round(balance)}
+                                                        </Text>
+                                                        <View style={[styles.barBase, { height: barHeight, backgroundColor: '#4CAF50' }]} />
+                                                    </>
+                                                )}
+                                            </View>
+                                            <View style={styles.chartHalfOver}>
+                                                {isOver && (
+                                                    <>
+                                                        <View style={[styles.barBase, { height: barHeight, backgroundColor: '#FF5252' }]} />
+                                                        <Text style={[styles.barValueText, { color: '#C62828', marginTop: 2 }]}>
+                                                            {Math.round(balance)}
+                                                        </Text>
+                                                    </>
+                                                )}
+                                            </View>
+                                            <Text style={styles.barDateLabel}>{dDate}</Text>
+                                        </View>
+                                    );
+                                })}
+                            </ScrollView>
+                        </View>
+                        <Text style={styles.chartHint}>Daily calorie balance trend</Text>
+                    </View>
+                </View>
             </ScrollView>
 
-            {/* Modal Components remain unchanged */}
+            {/* Modal Component: History Logs lists container nested here now */}
             <Modal visible={showChart} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowChart(false)}>
                 <View style={styles.modalContainer}>
                     <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
-                        <Text style={styles.modalTitle}>Balance Trends</Text>
+                        <Text style={styles.modalTitle}>Balance History</Text>
                         <TouchableOpacity onPress={() => setShowChart(false)}>
                             <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
                         </TouchableOpacity>
                     </View>
 
-                    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 50 }}>
-                        <View style={styles.averagesContainer}>
-                            <View style={{ flexDirection: 'row', marginBottom: 10 }}>
-                                <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9' }]}>
-                                    <Text style={styles.avgLabelCenter}>TODAY REMAINING</Text>
-                                    <Text style={styles.avgValueCenter}>{averages.today.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                                </View>
-                                <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
-                                    <Text style={styles.avgLabelCenter}>DAILY REMAINING AVG (WEEK)</Text>
-                                    <Text style={styles.avgValueCenter}>{averages.weekly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                                </View>
-                            </View>
-                            <View style={{ flexDirection: 'row', marginBottom: 10 }}>
-                                <View style={styles.avgBoxSmall}>
-                                    <Text style={styles.avgLabelCenter}>DAILY REMAINING AVG (MONTH)</Text>
-                                    <Text style={styles.avgValueCenter}>{averages.monthly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                                </View>
-                                <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9' }]}>
-                                    <Text style={styles.avgLabelCenter}>DAILY REMAINING AVG (YEAR)</Text>
-                                    <Text style={styles.avgValueCenter}>{averages.yearly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                                </View>
-                            </View>
+                    {/* Integrated search container inside modal framework */}
+                    <View style={{ paddingHorizontal: 20, paddingTop: 15 }}>
+                        <View style={styles.searchContainer}>
+                            <Ionicons name="search" size={22} color="#999" style={styles.searchIcon} />
+                            <TextInput
+                                style={styles.searchInput}
+                                placeholder="Search food or activity..."
+                                placeholderTextColor="#999"
+                                value={searchQuery}
+                                onChangeText={setSearchQuery}
+                            />
+                            {searchQuery.length > 0 && (
+                                <TouchableOpacity
+                                    onPress={() => setSearchQuery('')}
+                                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                                >
+                                    <Ionicons name="close-circle" size={22} color="#CCC" />
+                                </TouchableOpacity>
+                            )}
                         </View>
+                    </View>
 
-                        <View style={styles.comparisonCard}>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 }}>
-                                <Text style={styles.comparisonTitle}>Remaining Calories History</Text>
-                                <View style={{ backgroundColor: '#B8860B', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
-                                    <Text style={{ fontSize: 10, color: '#FFF', fontWeight: 'bold' }}>GOAL: {targetCalories}</Text>
-                                </View>
-                            </View>
+                    {/* Main History Item Scroll Layout */}
+                    <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+                        {sortedDates.map(dateKey => {
+                            const data = stats[dateKey];
+                            const netRemaining = targetCalories + data.burned - data.intake;
+                            const isDeficit = netRemaining >= 0;
+                            const todayKey = getSafeDateKey(new Date().toISOString());
+                            const readableDate = dateKey === todayKey ? "Today" : getOrdinalDate(dateKey);
+                            const protIn = data.protein || 0;
+                            const protRemaining = Math.max(targetProtein - protIn, 0);
+                            const protPct = targetProtein > 0 ? Math.min(Math.round((protIn / targetProtein) * 100), 100) : 0;
 
-                            <View style={{ marginTop: 20 }}>
-                                <View style={[styles.chartWrapper, { height: 280 }]}>
-                                    <View style={[styles.targetBaseline, { top: 130 }]} />
-                                    <View style={{ position: 'absolute', top: 120, left: 8, zIndex: 25 }}>
-                                        <Text style={{ fontSize: 8, color: '#B8860B', fontWeight: '900', letterSpacing: 0.5 }}>GOAL</Text>
-                                    </View>
-                                    <ScrollView
-                                        horizontal
-                                        ref={chartScrollRef}
-                                        showsHorizontalScrollIndicator={false}
-                                        contentContainerStyle={{
-                                            paddingHorizontal: 15,
-                                            alignItems: 'center',
-                                            height: 280,
-                                            backgroundColor: '#F9F9F9',
-                                        }}
-                                        onContentSizeChange={() => chartScrollRef.current?.scrollToEnd({ animated: false })}
-                                    >
-                                        {sortedDates.slice().reverse().map((dateKey) => {
-                                            const data = stats[dateKey] || { intake: 0, burned: 0 };
-                                            const balance = targetCalories - (data.intake - data.burned);
-                                            const isOver = balance < 0;
-                                            const barHeight = Math.min(
-                                                (Math.abs(balance) / (maxVal / 2)) * HALF_HEIGHT,
-                                                HALF_HEIGHT - 2
-                                            );
-                                            const parts = dateKey.split('-');
-                                            const dDate = `${parts[2]}/${parts[1]}`;
-                                            return (
-                                                <View key={dateKey} style={styles.barColumn}>
-                                                    <View style={styles.chartHalfUnder}>
-                                                        {!isOver && balance !== 0 && (
-                                                            <>
-                                                                <Text style={[styles.barValueText, { color: '#2E7D32', marginBottom: 2 }]}>
-                                                                    +{Math.round(balance)}
-                                                                </Text>
-                                                                <View style={[styles.barBase, { height: barHeight, backgroundColor: '#4CAF50' }]} />
-                                                            </>
-                                                        )}
-                                                    </View>
-                                                    <View style={styles.chartHalfOver}>
-                                                        {isOver && (
-                                                            <>
-                                                                <View style={[styles.barBase, { height: barHeight, backgroundColor: '#FF5252' }]} />
-                                                                <Text style={[styles.barValueText, { color: '#C62828', marginTop: 2 }]}>
-                                                                    {Math.round(balance)}
-                                                                </Text>
-                                                            </>
-                                                        )}
-                                                    </View>
-                                                    <Text style={styles.barDateLabel}>{dDate}</Text>
+                            return (
+                                <View key={dateKey} style={styles.daySection}>
+                                    <TouchableOpacity style={[styles.summaryCard, !isDeficit && styles.summaryCardSurplus]} onPress={() => toggleSection(dateKey)} activeOpacity={0.9}>
+                                        <View style={styles.cardTop}>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                <Text style={styles.dateText}>{readableDate}</Text>
+                                                <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#999" style={{ marginLeft: 5 }} />
+                                            </View>
+                                            <View style={[styles.statusBadge, { backgroundColor: isDeficit ? '#E8F5E9' : '#FFEBEE' }]}>
+                                                <Text style={[styles.statusText, { color: isDeficit ? '#2E7D32' : '#C62828' }]}>{isDeficit ? 'UNDER' : 'OVER'}</Text>
+                                            </View>
+                                        </View>
+                                        <View style={styles.mathRow}>
+                                            <View style={styles.mathItem}><Text style={styles.mathLabel}>Cal Goal</Text><Text style={styles.mathValue}>{targetCalories} cal</Text></View>
+                                            <Text style={styles.mathOperator}>+</Text>
+                                            <View style={styles.mathItem}><Text style={styles.mathLabel}>Burn</Text><Text style={styles.mathValue}>{data.burned} cal</Text></View>
+                                            <Text style={styles.mathOperator}>-</Text>
+                                            <View style={styles.mathItem}><Text style={styles.mathLabel}>In</Text><Text style={styles.mathValue}>{data.intake} cal</Text></View>
+                                            <Text style={styles.mathOperator}>=</Text>
+                                            <View style={styles.mathItem}><Text style={styles.mathLabel}>Balance</Text><Text style={[styles.mathValue, { color: isDeficit ? '#1B4D20' : '#C62828' }]}>{Math.abs(netRemaining)} cal</Text></View>
+                                        </View>
+
+                                        <View style={{ height: 1, backgroundColor: '#F0F0F0', marginVertical: 10, opacity: 0.6 }} />
+
+                                        <View style={styles.mathRow}>
+                                            <View style={styles.mathItem}><Text style={styles.mathLabel}>Prot Goal</Text><Text style={styles.mathValue}>{targetProtein}g</Text></View>
+                                            <Text style={styles.mathOperator}> </Text>
+                                            <View style={styles.mathItem}>
+                                                <View style={{ backgroundColor: protPct === 100 ? '#E8F5E9' : '#F3E5F5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                                    <Text style={{ fontSize: 9, fontWeight: '900', color: protPct === 100 ? '#2E7D32' : '#7B1FA2' }}>{protPct}% MET</Text>
                                                 </View>
-                                            );
-                                        })}
-                                    </ScrollView>
+                                            </View>
+                                            <Text style={styles.mathOperator}>-</Text>
+                                            <View style={styles.mathItem}><Text style={styles.mathLabel}>Prot In</Text><Text style={styles.mathValue}>{protIn}g</Text></View>
+                                            <Text style={styles.mathOperator}>=</Text>
+                                            <View style={styles.mathItem}>
+                                                <Text style={styles.mathLabel}>Remaining</Text>
+                                                <Text style={[styles.mathValue, { color: '#7B1FA2' }]}>{protRemaining}g</Text>
+                                            </View>
+                                        </View>
+                                        {(expandedSections[dateKey] || searchQuery) && (
+                                            <View style={styles.detailsList}>
+                                                {data.rawMeals.map(m => (<View key={m.id} style={styles.detailRow}><Text style={styles.detailName}>{m.productName || m.identifiedProduct}</Text><Text style={styles.detailValue}>-{m.calories} cal</Text></View>))}
+                                                {data.rawActs.map(a => (<View key={a.id} style={styles.detailRow}><Text style={[styles.detailName, { color: '#1B4D20' }]}>{a.type || 'Exercise'}</Text><Text style={[styles.detailValue, { color: '#1B4D20' }]}>+{a.caloriesBurned} cal</Text></View>))}
+                                            </View>
+                                        )}
+                                    </TouchableOpacity>
                                 </View>
-                                <Text style={styles.chartHint}>Daily calorie balance trend</Text>
-                            </View>
-                        </View>
+                            );
+                        })}
                     </ScrollView>
-                    <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
+                    <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}>
+                        <Text style={styles.bottomCloseBtnText}>Close Logs</Text>
+                    </TouchableOpacity>
                 </View>
             </Modal>
+
+            {/* Standard Global Utility Modals */}
             <Modal visible={showGuide} animationType="slide" presentationStyle="pageSheet"><View style={styles.modalContainer}><View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}><Text style={styles.modalTitle}>Health Guide</Text><TouchableOpacity onPress={() => setShowGuide(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity></View><View style={{ flex: 1 }}><Guide /></View><TouchableOpacity style={styles.bottomCloseBtn} onPress={() => setShowGuide(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity></View></Modal>
             <Modal visible={showShop} animationType="slide" presentationStyle="pageSheet"><View style={styles.modalContainer}><View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}><Text style={styles.modalTitle}>Shop at Amazon</Text><TouchableOpacity onPress={() => setShowShop(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity></View><View style={{ flex: 1 }}><Shop /></View><TouchableOpacity style={styles.bottomCloseBtn} onPress={() => setShowShop(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity></View></Modal>
-            <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} />
         </View>
     );
 }
 
-// Styles remain the same, updated todaySummaryCard in the JSX above
 const styles = StyleSheet.create({
     fullScreen: { flex: 1, backgroundColor: '#FBFBFB' },
     header: { paddingHorizontal: 20, paddingBottom: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
@@ -455,8 +456,6 @@ const styles = StyleSheet.create({
     searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F5F5', borderRadius: 12, paddingHorizontal: 15, height: 45 },
     searchIcon: { marginRight: 10 },
     searchInput: { flex: 1, fontSize: 14, color: '#333', fontWeight: '600' },
-    searchMargin: { marginBottom: 20 },
-    scrollPadding: { padding: 20, paddingBottom: 100 },
     daySection: { marginBottom: 12 },
     summaryCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 15, elevation: 3, borderLeftWidth: 5, borderLeftColor: '#4CAF50' },
     summaryCardSurplus: { borderLeftColor: '#FF5252' },
@@ -556,6 +555,5 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         width: 40,
         zIndex: 10
-    },
-    yAxisText: { fontSize: 9, color: '#999', fontWeight: '700' }
+    }
 });

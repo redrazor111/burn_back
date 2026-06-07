@@ -1,6 +1,5 @@
 /* eslint-disable react/no-unescaped-entities */
 import { auth, db } from '@/utils/firebaseConfig';
-import { useSubscriptionStatus } from '@/utils/subscription';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
@@ -21,7 +20,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // Component Imports
 import Guide from '../components/Guide';
 import Shop from '../components/Shop';
-import PremiumModal from './PremiumModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -33,13 +31,11 @@ export default function ActivityHistory() {
   const [history, setHistory] = useState([]);
   const [expandedSections, setExpandedSections] = useState({});
   const [userId, setUserId] = useState(auth.currentUser?.uid);
-  const { isPro } = useSubscriptionStatus();
   const chartScrollRef = useRef(null);
 
-  const [showChart, setShowChart] = useState(false);
+  const [showChart, setShowChart] = useState(false); // Acts as showHistory now
   const [showGuide, setShowGuide] = useState(false);
   const [showShop, setShowShop] = useState(false);
-  const [showPremium, setShowPremium] = useState(false);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -49,7 +45,6 @@ export default function ActivityHistory() {
   useEffect(() => {
     if (isFocused) {
       setExpandedSections({});
-      setShowPremium(false);
       setShowShop(false);
       setShowChart(false);
       setShowGuide(false);
@@ -65,15 +60,8 @@ export default function ActivityHistory() {
     return () => { actsUnsub(); };
   }, [userId]);
 
-  const handleOpenChart = () => {
-    if (isPro) {
-      setShowChart(true);
-      setTimeout(() => {
-        chartScrollRef.current?.scrollToEnd({ animated: false });
-      }, 500);
-    } else {
-      setShowPremium(true);
-    }
+  const handleOpenHistoryModal = () => {
+    setShowChart(true);
   };
 
   const getSafeDateKey = (dateString) => {
@@ -130,6 +118,15 @@ export default function ActivityHistory() {
     return { sortedDates: dates, maxVal: Math.max(highestBurn + 150, 500) };
   }, [groupedData]);
 
+  // Auto-scroll trends chart on layout initialization
+  useEffect(() => {
+    if (isFocused && history.length > 0) {
+      setTimeout(() => {
+        chartScrollRef.current?.scrollToEnd({ animated: false });
+      }, 500);
+    }
+  }, [isFocused, history]);
+
   const toggleSection = (section) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -146,10 +143,10 @@ export default function ActivityHistory() {
     <View style={styles.fullScreen}>
       <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
         <View style={styles.headerTopRow}>
-          <Text style={styles.title}>Burned History</Text>
+          <Text style={styles.title}>Burn Trends</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity onPress={handleOpenChart} style={styles.actionBtn}>
-              <MaterialCommunityIcons name="finance" size={28} color="#B8860B" />
+            <TouchableOpacity onPress={handleOpenHistoryModal} style={styles.actionBtn}>
+              <MaterialCommunityIcons name="format-list-bulleted" size={28} color="#1B4D20" />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowGuide(true)} style={styles.actionBtn}>
               <MaterialCommunityIcons name="book-open-variant" size={28} color="#1B4D20" />
@@ -169,35 +166,127 @@ export default function ActivityHistory() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContentList} showsVerticalScrollIndicator={false}>
-        {Object.keys(groupedData).sort((a, b) => b.localeCompare(a)).map((dateKey) => (
-          <View key={dateKey} style={styles.sectionContainer}>
-            <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(dateKey)} activeOpacity={0.7}>
-              <View style={styles.sectionHeaderTextGroup}>
-                <Text style={styles.sectionLabel}>{getFullReadableDate(dateKey).toUpperCase()}</Text>
-                <Text style={styles.sectionTotalValue}>{groupedData[dateKey].totalBurned.toLocaleString()} cal</Text>
-              </View>
-              <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#9E9E9E" />
-            </TouchableOpacity>
-            {expandedSections[dateKey] && (
-              <View style={styles.itemsContainer}>
-                {groupedData[dateKey].items.map((item) => (
-                  <View key={item.id} style={styles.historyCard}>
-                    <View style={styles.historyIconBg}><MaterialCommunityIcons name={item.icon || "run"} size={26} color="#1B4D20" /></View>
-                    <View style={styles.historyDetails}>
-                      <Text style={styles.historyTime}>{item.type || 'Activity'}</Text>
-                      <Text style={styles.historyActivityName}>{item.duration ? `${item.duration} mins` : 'Active Session'}</Text>
-                    </View>
-                    <View style={styles.valueBadge}><Text style={styles.valueText}>{item.caloriesBurned || 0} cal</Text></View>
-                  </View>
-                ))}
-              </View>
-            )}
+      {/* Main Screen Content: Performance Dashboard Display */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 15, paddingBottom: 40 }}>
+
+        {/* 4-BOX SUMMARY GRID */}
+        <View style={styles.averagesContainer}>
+          <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+            <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9' }]}>
+              <Text style={styles.avgLabelCenter}>TODAY</Text>
+              <Text style={styles.avgValueCenter}>{averages.today.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+            </View>
+            <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
+              <Text style={styles.avgLabelCenter}>DAILY AVG (WEEK)</Text>
+              <Text style={styles.avgValueCenter}>{averages.weekly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+            </View>
           </View>
-        ))}
+          <View style={{ flexDirection: 'row' }}>
+            <View style={styles.avgBoxSmall}>
+              <Text style={styles.avgLabelCenter}>DAILY AVG (MONTH)</Text>
+              <Text style={styles.avgValueCenter}>{averages.monthly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+            </View>
+            <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9' }]}>
+              <Text style={styles.avgLabelCenter}>DAILY AVG (YEAR)</Text>
+              <Text style={styles.avgValueCenter}>{averages.yearly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.comparisonCard}>
+          <View style={styles.comparisonHeader}>
+            <Text style={styles.comparisonTitle}>Daily Activity History</Text>
+          </View>
+
+          <View style={{ marginTop: 20 }}>
+            <View style={[styles.chartWrapper, { height: 280 }]}>
+              <ScrollView
+                horizontal
+                ref={chartScrollRef}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{
+                  paddingHorizontal: 15,
+                  alignItems: 'flex-end',
+                  height: 280,
+                  backgroundColor: '#F9F9F9',
+                }}
+                onContentSizeChange={() => chartScrollRef.current?.scrollToEnd({ animated: false })}
+                onLayout={() => chartScrollRef.current?.scrollToEnd({ animated: false })}
+              >
+                {sortedDates.map((dateKey) => {
+                  const dayBurn = groupedData[dateKey].totalBurned;
+                  const barHeight = Math.min(
+                    (dayBurn / maxVal) * 240,
+                    238
+                  );
+
+                  const parts = dateKey.split('/');
+                  const dDate = `${parts[2]}/${parts[1]}`;
+
+                  return (
+                    <View key={dateKey} style={styles.barColumn}>
+                      {dayBurn > 0 && (
+                        <Text style={styles.barValueText}>
+                          {Math.round(dayBurn)}
+                        </Text>
+                      )}
+                      <View style={[styles.barBase, { height: Math.max(barHeight, 4) }]} />
+                      <Text style={styles.barDateLabel}>{dDate}</Text>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+            <Text style={styles.chartHint}>Daily calorie burn summary</Text>
+          </View>
+        </View>
       </ScrollView>
 
-      {/* GUIDE MODAL */}
+      {/* Modal Component: Nested Activity Log records collection */}
+      <Modal visible={showChart} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowChart(false)}>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
+            <Text style={styles.modalTitle}>Burned History</Text>
+            <TouchableOpacity onPress={() => setShowChart(false)}>
+              <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.scrollContentList} showsVerticalScrollIndicator={false}>
+            {Object.keys(groupedData).sort((a, b) => b.localeCompare(a)).map((dateKey) => (
+              <View key={dateKey} style={styles.sectionContainer}>
+                <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(dateKey)} activeOpacity={0.7}>
+                  <View style={styles.sectionHeaderTextGroup}>
+                    <Text style={styles.sectionLabel}>{getFullReadableDate(dateKey).toUpperCase()}</Text>
+                    <Text style={styles.sectionTotalValue}>{groupedData[dateKey].totalBurned.toLocaleString()} cal</Text>
+                  </View>
+                  <MaterialCommunityIcons name={expandedSections[dateKey] ? "chevron-up" : "chevron-down"} size={20} color="#9E9E9E" />
+                </TouchableOpacity>
+                {expandedSections[dateKey] && (
+                  <View style={styles.itemsContainer}>
+                    {groupedData[dateKey].items.map((item) => (
+                      <View key={item.id} style={styles.historyCard}>
+                        <View style={styles.historyIconBg}><MaterialCommunityIcons name={item.icon || "run"} size={26} color="#1B4D20" /></View>
+                        <View style={styles.historyDetails}>
+                          <Text style={styles.historyTime}>{item.type || 'Activity'}</Text>
+                          <Text style={styles.historyActivityName}>{item.duration ? `${item.duration} mins` : 'Active Session'}</Text>
+                        </View>
+                        <View style={styles.valueBadge}><Text style={styles.valueText}>{item.caloriesBurned || 0} cal</Text></View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ))}
+          </ScrollView>
+
+          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowChart(false)}>
+            <Text style={styles.bottomCloseBtnText}>Close Logs</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Global Modals */}
       <Modal visible={showGuide} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowGuide(false)}>
         <View style={styles.modalContainer}>
           <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
@@ -209,7 +298,6 @@ export default function ActivityHistory() {
         </View>
       </Modal>
 
-      {/* SHOP POP-UP MODAL */}
       <Modal visible={showShop} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowShop(false)}>
         <View style={styles.modalContainer}>
           <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
@@ -218,116 +306,10 @@ export default function ActivityHistory() {
               <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
             </TouchableOpacity>
           </View>
-          <View style={{ flex: 1 }}>
-            <Shop />
-          </View>
-          <TouchableOpacity
-            style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]}
-            onPress={() => setShowShop(false)}
-          >
-            <Text style={styles.bottomCloseBtnText}>Close</Text>
-          </TouchableOpacity>
+          <View style={{ flex: 1 }}><Shop /></View>
+          <TouchableOpacity style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]} onPress={() => setShowShop(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity>
         </View>
       </Modal>
-
-      {/* TRENDS/CHART POP-UP MODAL */}
-      <Modal visible={showChart} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowChart(false)}>
-        <View style={styles.modalContainer}>
-          <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
-            <Text style={styles.modalTitle}>Burn Trends</Text>
-            <TouchableOpacity onPress={() => setShowChart(false)}>
-              <MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 50 }}>
-
-            {/* 4-BOX SUMMARY GRID */}
-            <View style={styles.averagesContainer}>
-              <View style={{ flexDirection: 'row', marginBottom: 10 }}>
-                <View style={[styles.avgBoxSmall, { backgroundColor: '#E8F5E9' }]}>
-                  <Text style={styles.avgLabelCenter}>TODAY</Text>
-                  <Text style={styles.avgValueCenter}>{averages.today.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                </View>
-                <View style={[styles.avgBoxSmall, { marginLeft: 10 }]}>
-                  <Text style={styles.avgLabelCenter}>DAILY AVG (WEEK)</Text>
-                  <Text style={styles.avgValueCenter}>{averages.weekly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                </View>
-              </View>
-              <View style={{ flexDirection: 'row' }}>
-                <View style={styles.avgBoxSmall}>
-                  <Text style={styles.avgLabelCenter}>DAILY AVG (MONTH)</Text>
-                  <Text style={styles.avgValueCenter}>{averages.monthly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                </View>
-                <View style={[styles.avgBoxSmall, { marginLeft: 10, backgroundColor: '#F1F8E9' }]}>
-                  <Text style={styles.avgLabelCenter}>DAILY AVG (YEAR)</Text>
-                  <Text style={styles.avgValueCenter}>{averages.yearly.toLocaleString()} <Text style={styles.avgUnit}>cal</Text></Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.comparisonCard}>
-              <View style={styles.comparisonHeader}>
-                <Text style={styles.comparisonTitle}>Daily Activity History</Text>
-              </View>
-
-              <View style={{ marginTop: 20 }}>
-                <View style={[styles.chartWrapper, { height: 280 }]}>
-                  <ScrollView
-                    horizontal
-                    ref={chartScrollRef}
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{
-                      paddingHorizontal: 15,
-                      alignItems: 'flex-end',
-                      height: 280,
-                      backgroundColor: '#F9F9F9',
-                    }}
-                    onContentSizeChange={() => chartScrollRef.current?.scrollToEnd({ animated: false })}
-                    onLayout={() => chartScrollRef.current?.scrollToEnd({ animated: false })}
-                  >
-                    {sortedDates.map((dateKey) => {
-                      const dayBurn = groupedData[dateKey].totalBurned;
-                      const barHeight = Math.min(
-                        (dayBurn / maxVal) * 240,
-                        238
-                      );
-
-                      const parts = dateKey.split('/');
-                      const dDate = `${parts[2]}/${parts[1]}`;
-
-                      return (
-                        <View key={dateKey} style={styles.barColumn}>
-                          {dayBurn > 0 && (
-                            <Text style={styles.barValueText}>
-                              {Math.round(dayBurn)}
-                            </Text>
-                          )}
-                          <View style={[styles.barBase, { height: Math.max(barHeight, 4) }]} />
-                          <Text style={styles.barDateLabel}>{dDate}</Text>
-                        </View>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-
-                <Text style={styles.chartHint}>Daily calorie burn summary</Text>
-              </View>
-            </View>
-          </ScrollView>
-
-          <TouchableOpacity
-            style={[styles.bottomCloseBtn, { marginBottom: insets.bottom + 10 }]}
-            onPress={() => setShowChart(false)}
-          >
-            <Text style={styles.bottomCloseBtnText}>Close</Text>
-          </TouchableOpacity>
-        </View>
-      </Modal>
-
-      <Modal visible={showGuide} animationType="slide" presentationStyle="pageSheet"><View style={styles.modalContainer}><View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}><Text style={styles.modalTitle}>Health Guide</Text><TouchableOpacity onPress={() => setShowGuide(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity></View><View style={{ flex: 1 }}><Guide /></View><TouchableOpacity style={styles.bottomCloseBtn} onPress={() => setShowGuide(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity></View></Modal>
-      <Modal visible={showShop} animationType="slide" presentationStyle="pageSheet"><View style={styles.modalContainer}><View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}><Text style={styles.modalTitle}>Shop at Amazon</Text><TouchableOpacity onPress={() => setShowShop(false)}><MaterialCommunityIcons name="close-circle" size={32} color="#1B4D20" /></TouchableOpacity></View><View style={{ flex: 1 }}><Shop /></View><TouchableOpacity style={styles.bottomCloseBtn} onPress={() => setShowShop(false)}><Text style={styles.bottomCloseBtnText}>Close</Text></TouchableOpacity></View></Modal>
-      <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} />
     </View>
   );
 }
@@ -420,11 +402,7 @@ const styles = StyleSheet.create({
     borderColor: '#EEE',
     elevation: 3,
   },
-  barDateTextAbsolute: { position: 'absolute', bottom: -28, fontSize: 8, color: '#999', fontWeight: '700', width: 50, textAlign: 'center' },
-  yAxisText: { fontSize: 9, color: '#999', fontWeight: '700' },
   bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
   bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
-  placeholderContainer: { alignItems: 'center', marginTop: 100 },
-  placeholderText: { color: '#BDBDBD', marginTop: 15, fontSize: 16, textAlign: 'center' },
   itemsContainer: { marginTop: 5 }
 });
