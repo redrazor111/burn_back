@@ -391,10 +391,23 @@ const styles = StyleSheet.create({
   comparisonHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   comparisonTitle: { fontSize: 16, fontWeight: '800', color: '#212529' },
   chartWrapper: { backgroundColor: '#F9F9F9', borderRadius: 16, overflow: 'hidden' },
-  barColumn: { width: 52, marginHorizontal: 3, alignItems: 'center', justifyContent: 'flex-end', height: 280 },
+  barColumn: {
+    width: 36,
+    marginHorizontal: 1.5,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: 280
+  },
   barBase: { width: 20, borderTopLeftRadius: 4, borderTopRightRadius: 4 },
   barValueText: { fontSize: 9, fontWeight: '900', textAlign: 'center', width: 50, marginBottom: 2 },
-  barDateLabel: { fontSize: 9, color: '#999', fontWeight: '700', textAlign: 'center', marginTop: 4, width: 52 },
+  barDateLabel: {
+    fontSize: 9,
+    color: '#999',
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 4,
+    width: 36,               // Matched to the new barColumn width to avoid text alignment offsets
+  },
   chartHint: { textAlign: 'center', fontSize: 11, color: '#AAA', fontWeight: '600', marginTop: 8, marginBottom: 4 },
   bottomCloseBtn: { backgroundColor: '#1B4D20', paddingVertical: 15, marginHorizontal: 20, borderRadius: 15, alignItems: 'center' },
   bottomCloseBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },

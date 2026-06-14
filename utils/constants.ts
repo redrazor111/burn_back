@@ -1,4 +1,4 @@
-export const MAX_SEARCHES = 2;
+export const MAX_SEARCHES = 3;
 export const MAX_MEALS = 9999;
 export const MAX_ACTIVITIES = 9999;
 export const SUB_CHARGE = 2.00;

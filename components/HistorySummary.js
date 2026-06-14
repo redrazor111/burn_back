@@ -499,9 +499,9 @@ const styles = StyleSheet.create({
         zIndex: 20,
         elevation: 20,
     },
-    barColumn: {
-        width: 52,
-        marginHorizontal: 3,
+barColumn: {
+        width: 36,
+        marginHorizontal: 1.5,
         alignItems: 'center',
         height: 280,
     },
@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         textAlign: 'center',
         marginTop: 4,
-        width: 52,
+        width: 36,
     },
     barBase: {
         width: 20,

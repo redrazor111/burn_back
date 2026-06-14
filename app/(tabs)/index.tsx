@@ -2163,13 +2163,22 @@ const handleAITextSearch = async () => {
   );
 }
 
-// Tab Navigator and Styles remain unchanged
 function AppContent() {
   const insets = useSafeAreaInsets();
   const iconMap: Record<string, any> = { Today: 'calendar-outline', Balance: 'scale-outline', "AI Scan": 'camera-outline', "Intake": 'fast-food-outline', "Burned": 'fitness-outline', Guide: 'book-outline', Shop: 'cart-outline' };
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <Tab.Navigator tabBarPosition="bottom" screenOptions={({ route }) => ({ tabBarActiveTintColor: '#1B4D20', tabBarInactiveTintColor: '#9E9E9E', tabBarLabelStyle: { fontSize: 10, fontWeight: '700', textTransform: 'none' }, tabBarStyle: { height: 75 + insets.bottom, paddingBottom: insets.bottom }, tabBarIcon: ({ color, focused }) => { const baseIconName = iconMap[route.name] || 'help-circle-outline'; const finalIconName = focused ? baseIconName.replace('-outline', '') : baseIconName; return <Ionicons name={finalIconName as any} size={24} color={color} />; }, })}>
+      <Tab.Navigator
+        tabBarPosition="bottom"
+        screenOptions={({ route }) => ({
+          swipeEnabled: false,
+          tabBarActiveTintColor: '#1B4D20',
+          tabBarInactiveTintColor: '#9E9E9E',
+          tabBarLabelStyle: { fontSize: 10, fontWeight: '700', textTransform: 'none' },
+          tabBarStyle: { height: 75 + insets.bottom, paddingBottom: insets.bottom },
+          tabBarIcon: ({ color, focused }) => { const baseIconName = iconMap[route.name] || 'help-circle-outline'; const finalIconName = focused ? baseIconName.replace('-outline', '') : baseIconName; return <Ionicons name={finalIconName as any} size={24} color={color} />; },
+        })}
+      >
         <Tab.Screen name="Today">{() => <SummaryScreen />}</Tab.Screen>
         <Tab.Screen name="AI Scan">{() => <CameraScreen />}</Tab.Screen>
         <Tab.Screen name="Balance">{() => <HistorySummary />}</Tab.Screen>

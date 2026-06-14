@@ -356,8 +356,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   barColumn: {
-    width: 52,
-    marginHorizontal: 3,
+    width: 36,
+    marginHorizontal: 1.5,
     alignItems: 'center',
     justifyContent: 'flex-end',
     height: 280,
@@ -382,7 +382,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     marginTop: 4,
-    width: 52,
+    width: 36,
   },
   chartHint: {
     textAlign: 'center',
